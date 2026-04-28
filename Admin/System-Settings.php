@@ -41,7 +41,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_category'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_supplier'])) {
     $name = trim($_POST['supplier_name'] ?? '');
     $number = trim($_POST['contact_number'] ?? '');
-    $email = trim($_POST['contact_email'] ?? '');
+    $email = trim($_POST['contact_email'] ?? '');// Treat empty or "N/A" email as null to avoid storing invalid emails.
+    if (strtoupper($email) === 'N/A') {
+        $email = null;}
+
     $description = trim($_POST['supplier_description'] ?? '');
     if ($name !== '') {
         $stmt = $conn->prepare("INSERT INTO product_suppliers (supplier_name, contact_number, contact_email, supplier_description)
@@ -113,7 +116,7 @@ $suppliers = $conn->query("SELECT id, supplier_name, contact_number, contact_ema
             <form method="post">
                 <input type="text" name="supplier_name" placeholder="Supplier Name" required>
                 <input type="text" name="contact_number" placeholder="Contact Number">
-                <input type="email" name="contact_email" placeholder="Email">
+                <input type="text" name="contact_email" placeholder="Email or N/A"> <!--Allow "N/A" for suppliers without an email, but store as NULL in the database to avoid invalid emails. -->
                 <input type="text" name="supplier_description" placeholder="Optional Description">
                 <button type="submit" name="add_supplier">Save Supplier</button>
             </form>

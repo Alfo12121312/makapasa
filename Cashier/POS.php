@@ -208,7 +208,7 @@ const cashierCanApplyDiscounts = <?php echo $canManualDiscount ? 'true' : 'false
 const activeDiscountRules = <?php echo json_encode($discountRules); ?>;
 const inventorySnapshotUrl = '../api/inventory_snapshot.php';
 // const processSaleUrl = '../api/process_sale.php';
-window.processSaleUrl = '../api/process_sale.php';
+window.processSaleUrl = '/caps-fi/api/process_sale.php';
 </script>
 <script src="../script.js"></script>
 </body>

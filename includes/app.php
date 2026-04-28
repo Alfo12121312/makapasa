@@ -271,7 +271,7 @@ function render_sidebar($context, $activePage, $title = null) {
     $activePage = current_page_name($activePage);
     $title = $title ?: $role;
     $root = $context === 'root' ? '' : '../';
-
+    //user-based sidebars
     $sections = [];
 
     if ($role === 'Admin') {
@@ -325,7 +325,7 @@ function render_sidebar($context, $activePage, $title = null) {
         $cashierBase = $context === 'root' ? 'Cashier/' : '';
         $sections = [
             'Sales / POS' => [
-                ['label' => 'POS', 'href' => $cashierBase . 'POS.php'],
+                // ['label' => 'POS', 'href' => $cashierBase . 'POS.php'],
                 ['label' => 'Transactions', 'href' => $cashierBase . 'Transactions.php'],
                 ['label' => 'Receipts', 'href' => $cashierBase . 'Receipts.php']
             ],
@@ -349,6 +349,29 @@ function render_sidebar($context, $activePage, $title = null) {
         $isDashboard = current_page_name($dashboardHref) === $activePage;
         echo '<ul class="sidebar-top-link">';
         echo '<li class="' . ($isDashboard ? 'active' : '') . '"><a href="' . htmlspecialchars($dashboardHref) . '">Dashboard</a></li>';
+        echo '</ul>';
+    }
+
+    if ($role === 'Owner') {
+        $dashboardHref = ($context === 'root' ? 'Owner/' : '') . 'Dashboard-Owner.php';
+        $isDashboard = current_page_name($dashboardHref) === $activePage;
+
+        echo '<ul class="sidebar-top-link">';
+        echo '<li class="' . ($isDashboard ? 'active' : '') . '">
+            <a href="' . htmlspecialchars($dashboardHref) . '">Dashboard</a>
+          </li>';
+        echo '</ul>';
+    }
+
+    // Cashiers get a separate POS link at the top for quick access, since it's their main function
+    if ($role === 'Cashier') {
+    $posHref = ($context === 'root' ? 'Cashier/' : '') . 'POS.php';
+    $isPOS = current_page_name($posHref) === $activePage;
+
+        echo '<ul class="sidebar-top-link">';
+        echo '<li class="' . ($isPOS ? 'active' : '') . '">
+            <a href="' . htmlspecialchars($posHref) . '">POS</a>
+          </li>';
         echo '</ul>';
     }
 

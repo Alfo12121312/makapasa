@@ -93,9 +93,9 @@ try {
     json_response(['success' => false, 'message' => $e->getMessage()], 400);
 }
 
-function json_response($data, $status = 200) {
-    http_response_code($status);
-    echo json_encode($data);
-    exit;
-}
+// function json_response($data, $status = 200) {
+//     http_response_code($status);
+//     echo json_encode($data);
+//     exit;
+// }
 ?>

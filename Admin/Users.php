@@ -154,8 +154,8 @@ if ($result->num_rows > 0) {
 <select name="role" required>
 <option value="">Select Role</option>
 <option value="Owner">Owner</option>
-<option value="Manager">Manager</option>
-<option value="System Admin">System Admin</option>
+<!-- <option value="Manager">Manager</option> -->
+<option value="System Admin">Admin</option>
 <option value="Cashier">Cashier</option>
 </select>
 
