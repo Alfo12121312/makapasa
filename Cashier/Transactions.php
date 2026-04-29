@@ -1,8 +1,12 @@
 <?php
 require_once __DIR__ . "/../includes/auth.php";
+require_once __DIR__ . "/../includes/app.php";
+
 require_roles(['Cashier'], '../Login.php');
 
 $conn = new mysqli("localhost", "root", "", "agrivet_db");
+render_sidebar('child', $_SERVER['PHP_SELF'], 'Agrivet Cashier');
+
 if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
@@ -24,7 +28,7 @@ $transactions = $conn->query("SELECT s.id, s.created_at, i.product_name, s.quant
     <link rel="stylesheet" href="../style.css">
 </head>
 <body>
-<div class="sidebar">
+<!-- <div class="sidebar">
     <button class="menu-toggle" onclick="toggleSidebar()">&#9776;</button>
     <h2 class="title">Agrivet Cashier</h2>
     <img src="../assets/logo.png" alt="Logo" class="logo">
@@ -34,7 +38,7 @@ $transactions = $conn->query("SELECT s.id, s.created_at, i.product_name, s.quant
         <li><a href="Receipts.php">Receipts</a></li>
         <li><a href="../logout.php">Logout</a></li>
     </ul>
-</div>
+</div> -->
 <div class="userAdmin">
     <h1>My Transactions</h1>
     <p>Cashier access is limited to your own transactions and receipts.</p>
@@ -48,6 +52,7 @@ $transactions = $conn->query("SELECT s.id, s.created_at, i.product_name, s.quant
                     <td><?php echo date('M d, Y h:i A', strtotime($row['created_at'])); ?></td>
                     <td><?php echo htmlspecialchars($row['product_name']); ?></td>
                     <td><?php echo (int)$row['quantity']; ?></td>
+                    <!-- add unit -->
                     <td>PHP <?php echo number_format((float)$row['unit_price'], 2); ?></td>
                     <td>PHP <?php echo number_format((float)$row['discount'], 2); ?></td>
                     <td>PHP <?php echo number_format((float)$row['total_price'], 2); ?></td>

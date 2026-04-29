@@ -300,7 +300,7 @@ function render_sidebar($context, $activePage, $title = null) {
             'Reports' => [
                 ['label' => 'Categories', 'href' => $adminBase . 'Categories.php'],
                 ['label' => 'Suppliers', 'href' => $adminBase . 'Suppliers.php'],
-                ['label' => 'Sales Report', 'href' => $root . 'Sales-Report.php']
+                ['label' => 'Sales Report', 'href' => $adminBase . 'Sales-ReportAdmin.php']
             ],
             'System Settings' => [
                 ['label' => 'Discounts', 'href' => $adminBase . 'Discounts.php'],
@@ -312,8 +312,8 @@ function render_sidebar($context, $activePage, $title = null) {
         $ownerBase = $context === 'root' ? 'Owner/' : '';
         $sections = [
             'Reports' => [
-                ['label' => 'Dashboard', 'href' => $ownerBase . 'Dashboard-Owner.php'],
-                ['label' => 'Sales Report', 'href' => $root . 'Sales-Report.php'],
+                // ['label' => 'Dashboard', 'href' => $ownerBase . 'Dashboard-Owner.php'],
+                ['label' => 'Sales Report', 'href' => $ownerBase . 'Sales-ReportOwner.php'],
                 ['label' => 'Profit & Loss', 'href' => $root . 'Profit-Loss.php'],
                 ['label' => 'Shift Reports', 'href' => $ownerBase . 'Shift-Report.php'],
                 ['label' => 'Inventory Summary', 'href' => $ownerBase . 'Inventory.php'],

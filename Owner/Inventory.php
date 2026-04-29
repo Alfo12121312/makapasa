@@ -100,6 +100,12 @@ $suppliers_result  = $conn->query("SELECT DISTINCT supplier FROM inventory WHERE
     </div>
 </div>
 
+<div class="Legend">
+    <div class="item"><span class="status-dot dot-out"></span>Out of Stock</div>
+    <div class="item"><span class="status-dot dot-low"></span>Low Stock</div>
+    <div class="item"><span class="status-dot dot-ok"></span>In Stock</div>
+</div>
+
 <!-- TABLE -->
 <table id="inventoryTable" class="userTable">
 

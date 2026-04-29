@@ -1,8 +1,12 @@
 <?php
 require_once __DIR__ . "/../includes/auth.php";
+require_once __DIR__ . "/../includes/app.php";
+
 require_roles(['Cashier'], '../Login.php');
 
 $conn = new mysqli("localhost", "root", "", "agrivet_db");
+render_sidebar('child', $_SERVER['PHP_SELF'], 'Agrivet Cashier');
+
 if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
@@ -39,7 +43,7 @@ if ($selected_id > 0) {
     <link rel="stylesheet" href="../style.css">
 </head>
 <body>
-<div class="sidebar">
+<!-- <div class="sidebar">
     <button class="menu-toggle" onclick="toggleSidebar()">&#9776;</button>
     <h2 class="title">Agrivet Cashier</h2>
     <img src="../assets/logo.png" alt="Logo" class="logo">
@@ -49,7 +53,7 @@ if ($selected_id > 0) {
         <li class="active"><a href="Receipts.php">Receipts</a></li>
         <li><a href="../logout.php">Logout</a></li>
     </ul>
-</div>
+</div> -->
 <div class="userAdmin">
     <h1>Receipt Reprint</h1>
     <p>Select a sale to view and print as PDF.</p>
@@ -95,3 +99,4 @@ if ($selected_id > 0) {
 </body>
 </html>
 <?php $conn->close(); ?>
+
