@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . "/../includes/auth.php";
 require_roles(['Owner'], '../Login.php');
+require_once __DIR__ . "/../includes/app.php";
 
 $servername = "localhost";
 $username = "root";
@@ -35,9 +36,10 @@ $suppliers_result  = $conn->query("SELECT DISTINCT supplier FROM inventory WHERE
 </head>
 
 <body>
+    <?php render_sidebar('Owner','Inventory','Owner'); ?>
 
 <!-- SIDEBAR NAVIGATION (RESTORED) -->
-<div class="sidebar">
+<!-- <div class="sidebar">
     <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
 
     <h2 class="title">Agrivet Owner</h2>
@@ -50,7 +52,7 @@ $suppliers_result  = $conn->query("SELECT DISTINCT supplier FROM inventory WHERE
         <li><a href="../Sales-Report.php">Sales Report</a></li>
         <li><a href="../logout.php">Logout</a></li>
     </ul>
-</div>
+</div> -->
 
 <!-- MAIN -->
 <div class="userAdmin">

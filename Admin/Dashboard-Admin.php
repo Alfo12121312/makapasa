@@ -158,10 +158,10 @@ $healthOk = count($healthWarnings) === 0;
             <h1>Operations Analytics</h1>
             <p>Real-time store, sales, and HR analytics with live system health checks.</p>
         </div>
-        <span class="chip"><?php echo $healthOk ? 'System Connected' : 'Needs Attention'; ?></span>
+        <!-- <span class="chip"><?php echo $healthOk ? 'System Connected' : 'Needs Attention'; ?></span> -->
     </div>
 
-    <div class="form-container">
+    <!-- <div class="form-container"> db status
         <h2>System to Database Status</h2>
         <p class="<?php echo $healthOk ? 'status-text ok' : 'status-text warn'; ?>">
             <?php echo $healthOk ? 'Web app and required database tables are connected.' : 'Detected connectivity/schema issues. Review warnings below.'; ?>
@@ -173,7 +173,7 @@ $healthOk = count($healthWarnings) === 0;
                 <?php endforeach; ?>
             </ul>
         <?php endif; ?>
-    </div>
+    </div> -->
 
     <div class="stats-grid">
         <div class="stat-card"><div class="label">Today Sales</div><div class="value">PHP <?php echo number_format($stats['today_sales'], 2); ?></div></div>

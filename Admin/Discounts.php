@@ -74,9 +74,11 @@ $discounts = $conn->query("SELECT d.*, i.product_name
                 <?php endwhile; endif; ?>
             </select>
             <input type="number" step="0.01" min="0.01" name="discount_value" placeholder="Value" required>
-            <input type="number" min="1" name="min_qty" value="1" placeholder="Minimum Qty">
-            <input type="datetime-local" name="start_at">
-            <input type="datetime-local" name="end_at">
+            <input type="number" min="1" name="min_qty" placeholder="Minimum Qty">
+            <label for="start_at">Start Date</label>
+            <input type="datetime-local" name="start_at" id="start_at">
+            <label for="end_at">End Date</label>
+            <input type="datetime-local" name="end_at" id="end_at">
             <label class="inline-check"><input type="checkbox" name="is_active" checked> <span>Active</span></label>
             <button type="submit" name="save_discount">Save Promotion</button>
         </form>

@@ -180,7 +180,7 @@ $suppliers_result = $conn->query($suppliers_sql);
     <div class="message error"><?php echo $error_message; ?></div>
 <?php endif; ?>
 
-<p>Use Manage Product to add new products.<!--Here you can transfer existing inventory items between Display and Warehouse.--></p> 
+<!-- <p>Use Manage Product to add new products.Here you can transfer existing inventory items between Display and Warehouse.</p>  -->
 
 <!-- Search and Filter Controls -->
 <div class="search-filter-container">

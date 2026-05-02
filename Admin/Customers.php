@@ -47,7 +47,7 @@ $customers = $conn->query("SELECT * FROM customers ORDER BY created_at DESC");
         <h2>Add Customer</h2>
         <form method="post">
             <input type="text" name="full_name" placeholder="Full Name" required>
-            <input type="text" name="phone" placeholder="Phone Number">
+            <input type="number" name="phone" placeholder="Phone Number">
             <input type="text" name="address" placeholder="Address">
             <button type="submit" name="add_customer">Add Customer</button>
         </form>

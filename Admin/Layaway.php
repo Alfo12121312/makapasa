@@ -119,8 +119,8 @@ $layaways = $conn->query("SELECT l.*, COALESCE(SUM(lp.amount), 0) total_paid
     <div class="form-container">
         <h2>Create Layaway</h2>
         <form method="post">
-            <input type="text" name="customer_name" placeholder="Customer Name" required>
-            <input type="text" name="contact_number" placeholder="Contact Number">
+            <input type="" name="customer_name" placeholder="Customer Name" required>
+            <input type="number" name="contact_number" placeholder="Contact Number">
             <select name="product_id" required>
                 <option value="">Select Product</option>
                 <?php if ($products): while ($product = $products->fetch_assoc()): ?>
@@ -129,7 +129,7 @@ $layaways = $conn->query("SELECT l.*, COALESCE(SUM(lp.amount), 0) total_paid
                     </option>
                 <?php endwhile; endif; ?>
             </select>
-            <input type="number" name="quantity" min="1" value="1" required>
+            <input type="number" name="quantity" min="1" placeholder="Quantity" required>
             <input type="number" step="0.01" min="0" name="down_payment" placeholder="Down Payment" required>
             <input type="text" name="notes" placeholder="Notes">
             <button type="submit" name="create_layaway">Create Layaway</button>

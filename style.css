@@ -85,27 +85,47 @@ min-height:100vh;
 .logo{
     width:80px;
     height:auto;
-    margin-top: 25px;
-   
+    margin-top: 15px;
+    margin-bottom: 15px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.08);
+    padding: 8px;
+    display: block;
 }
 
 /* Sidebar title/brand name */
 .title{
-    font-size:18px;
-    text-align:center;
+    font-size: 16px;
+    font-weight: 700;
+    text-align: center;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #ffffff;
+    margin-bottom: 20px;
 }
 
 /* Hamburger */
 .menu-toggle{
-    position:absolute;
-    top:15px;
-    left:15px;
-    background:none;
-    border:none;
-    color:white;
-    font-size:20px;
-    cursor:pointer;
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    background: rgba(255, 255, 255, 0.12);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
     z-index: 1000;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: 0.2s;
+}
+
+.menu-toggle:hover {
+    background: rgba(255, 255, 255, 0.2);
 }
 
 .sidebar-header{
@@ -118,20 +138,28 @@ min-height:100vh;
 
 /* SIDEBAR NAVIGATION - Fixed left panel with menu links */
 .sidebar{
-  width: 230px;  /* Sidebar width */
+  width: 250px;  /* Sidebar width */
   height: 100vh;  /* Full viewport height */
-  background: var(--nav-bg-start, #12263a);  /* Dark blue-gray background */
+  background: linear-gradient(180deg, var(--nav-bg-start, #12263a) 0%, var(--nav-bg-end, #1a3a52) 100%);
   color: var(--nav-text, #ffffff);
   padding-top: 20px;
   transition: 0.6s;  /* Smooth animation for collapse/expand */
   flex-shrink: 0;
   overflow-y: auto;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 /* Sidebar title/brand */
 .sidebar h2{
   text-align: center;
-  margin-bottom: 30px;
+  margin-bottom: 20px;
+  margin-top: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #ffffff;
 }
 
 /* Menu list styling */
@@ -150,16 +178,22 @@ min-height:100vh;
 /* Menu links - Navigation items in sidebar */
 .sidebar ul li a{
   display: block;
-  padding: 15px 20px;
-  color: var(--nav-link, #eaf2fb);
+  padding: 11px 16px;
+  color: var(--nav-link, #b3d9ff);
   text-decoration: none;
   cursor: pointer;
-  transition: 0.2s;  /* Smooth hover effect */
+  transition: all 0.2s ease;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 8px;
+  margin: 4px 8px;
 }
 
 /* Menu link hover effect - Highlight when hovered */
 .sidebar ul li a:hover{
-  background: var(--nav-active-bg, rgba(24, 119, 201, 0.82));  /* Active/hover highlight */
+  background: var(--nav-active-bg, rgba(24, 119, 201, 0.92));
+  color: #ffffff;
+  transform: translateX(4px);
 }
 
 /* .sidebar ul li.active a{
@@ -170,18 +204,23 @@ min-height:100vh;
 /* COLLAPSED SIDEBAR - Mobile/small screen sidebar state */
 /* Hide text and shrink sidebar when collapsed */
 .sidebar.collapsed{
-    width:70px;
+    width: 70px;
 }
 
 /* Hide text when collapsed */
 .sidebar.collapsed .title,
 .sidebar.collapsed ul li a{
-    display:none;
+    display: none;
+}
+
+/* Hide sidebar groups when collapsed */
+.sidebar.collapsed .sidebar-group-toggle span:first-child {
+    display: none;
 }
 
 /* Center logo when collapsed */
 .sidebar.collapsed .logo{
-    width:40px;
+    width: 40px;
 }
 
 /*Main - User Layout*/
@@ -262,7 +301,7 @@ border-bottom:1px solid #ddd;
     .userTable td:before {
         content: attr(data-label);
         float: left;
-        font-weight: bold;
+        font-weight: 700;
         color: #1abc9c;
     }
 
@@ -278,7 +317,7 @@ border-bottom:1px solid #ddd;
     border-bottom: 2px solid #3498db;
     padding-bottom: 10px;
 }
- */
+
 /* end */
 
 /* USER TABLE - Displays users/products/inventory data */
@@ -530,7 +569,7 @@ background:rgba(24, 119, 201, 0.82);
     display: flex;
     gap: 20px;
     align-items: flex-start;
-    min-height: calc(100vh - 160px);
+    min-height: calc(120vh - 170px);
 }
 
 .products-section {
@@ -616,7 +655,8 @@ background:rgba(24, 119, 201, 0.82);
 }
 
 .checkout-sidebar {
-    max-height: 80vh;
+    /* changed to make cash-in and out inside */
+    max-height: 100vh; 
     display: flex;
     flex-direction: column;
 }
@@ -1367,7 +1407,7 @@ background:rgba(24, 119, 201, 0.82);
     }
 
     .form-container form {
-        max-width: 500px;
+        max-width: 600px;
     }
 }
 

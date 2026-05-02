@@ -277,66 +277,67 @@ function render_sidebar($context, $activePage, $title = null) {
     if ($role === 'Admin') {
         $adminBase = $context === 'root' ? 'Admin/' : '';
         $sections = [
-            'Sales / POS' => [
-                ['label' => 'Transactions', 'href' => $adminBase . 'Transactions.php'],
-                ['label' => 'Shift Reports', 'href' => $adminBase . 'Shift-Report.php'],
-                ['label' => 'Layaway', 'href' => $adminBase . 'Layaway.php']
+            'Sales & Transactions' => [
+                ['label' => ' Transactions', 'href' => $adminBase . 'Transactions.php'],
+                ['label' => ' Shift Reports', 'href' => $adminBase . 'Shift-Report.php'],
+                ['label' => ' Layaway', 'href' => $adminBase . 'Layaway.php']
             ],
-            'Inventory' => [
-                ['label' => 'Manage Product', 'href' => $adminBase . 'Manage-Product.php'],
-                ['label' => 'Inventory', 'href' => $adminBase . 'Inventory.php'],
-                ['label' => 'Customers', 'href' => $adminBase . 'Customers.php']
+            ' Inventory' => [
+                ['label' => ' Products', 'href' => $adminBase . 'Manage-Product.php'],
+                ['label' => ' Stock', 'href' => $adminBase . 'Inventory.php'],
+                ['label' => ' Categories', 'href' => $adminBase . 'Categories.php']
             ],
-            'Employees / HR' => [
-                ['label' => 'Employees', 'href' => $adminBase . 'Employees.php'],
-                ['label' => 'Attendance', 'href' => $adminBase . 'Attendance.php'],
-                ['label' => 'Payroll', 'href' => $adminBase . 'Payroll.php']
+            ' Customers' => [
+                ['label' => ' Customers', 'href' => $adminBase . 'Customers.php']
             ],
-            'Finance' => [
-                ['label' => 'Purchasing', 'href' => $adminBase . 'Purchasing.php'],
-                ['label' => 'Expenses', 'href' => $adminBase . 'Expenses.php'],
-                ['label' => 'Profit & Loss', 'href' => $root . 'Profit-Loss.php']
+            ' Staff' => [
+                ['label' => ' Employees', 'href' => $adminBase . 'Employees.php'],
+                ['label' => ' Attendance', 'href' => $adminBase . 'Attendance.php'],
+                ['label' => ' Payroll', 'href' => $adminBase . 'Payroll.php']
             ],
-            'Reports' => [
-                ['label' => 'Categories', 'href' => $adminBase . 'Categories.php'],
-                ['label' => 'Suppliers', 'href' => $adminBase . 'Suppliers.php'],
-                ['label' => 'Sales Report', 'href' => $adminBase . 'Sales-ReportAdmin.php']
+            ' Purchasing' => [
+                ['label' => ' Suppliers', 'href' => $adminBase . 'Suppliers.php'],
+                ['label' => ' Orders', 'href' => $adminBase . 'Purchasing.php'],
+                ['label' => ' Expenses', 'href' => $adminBase . 'Expenses.php']
             ],
-            'System Settings' => [
-                ['label' => 'Discounts', 'href' => $adminBase . 'Discounts.php'],
-                ['label' => 'Settings', 'href' => $adminBase . 'System-Settings.php'],
-                ['label' => 'Users', 'href' => $adminBase . 'Users.php']
+            ' Reports' => [
+                ['label' => ' Sales', 'href' => $adminBase . 'Sales-ReportAdmin.php'],
+                ['label' => ' Profit & Loss', 'href' => $root . 'Profit-Loss.php']
+            ],
+            ' Settings' => [
+                ['label' => ' Discounts', 'href' => $adminBase . 'Discounts.php'],
+                ['label' => ' Settings', 'href' => $adminBase . 'System-Settings.php'],
+                ['label' => ' Users', 'href' => $adminBase . 'Users.php']
             ]
         ];
-    } elseif ($role === 'Owner') {
+    }
+    elseif ($role === 'Owner') {
         $ownerBase = $context === 'root' ? 'Owner/' : '';
         $sections = [
-            'Reports' => [
-                // ['label' => 'Dashboard', 'href' => $ownerBase . 'Dashboard-Owner.php'],
-                ['label' => 'Sales Report', 'href' => $ownerBase . 'Sales-ReportOwner.php'],
-                ['label' => 'Profit & Loss', 'href' => $root . 'Profit-Loss.php'],
-                ['label' => 'Shift Reports', 'href' => $ownerBase . 'Shift-Report.php'],
-                ['label' => 'Inventory Summary', 'href' => $ownerBase . 'Inventory.php'],
-                ['label' => 'Employee Summary', 'href' => $ownerBase . 'HR-Summary.php'],
-                ['label' => 'Layaway Status', 'href' => $ownerBase . 'Layaway-Status.php']
+            ' Reports' => [
+                ['label' => ' Sales', 'href' => $ownerBase . 'Sales-ReportOwner.php'],
+                ['label' => ' Profit & Loss', 'href' => $root . 'Profit-Loss.php'],
+                ['label' => ' Shift Reports', 'href' => $ownerBase . 'Shift-Report.php'],
+                ['label' => ' Layaway Status', 'href' => $ownerBase . 'Layaway-Status.php']
             ]
         ];
-    } elseif ($role === 'Cashier') {
+
+} elseif ($role === 'Cashier') {
         $cashierBase = $context === 'root' ? 'Cashier/' : '';
         $sections = [
-            'Sales / POS' => [
-                // ['label' => 'POS', 'href' => $cashierBase . 'POS.php'],
-                ['label' => 'Transactions', 'href' => $cashierBase . 'Transactions.php'],
-                ['label' => 'Receipts', 'href' => $cashierBase . 'Receipts.php']
+            ' Sales' => [
+                ['label' => ' Transactions', 'href' => $cashierBase . 'Transactions.php'],
+                ['label' => ' Receipts', 'href' => $cashierBase . 'Receipts.php']
             ],
-            'Attendance' => [
-                ['label' => 'Employee Attendance', 'href' => $cashierBase . 'Attendance.php']
+            ' Staff' => [
+                ['label' => '✓ Attendance', 'href' => $cashierBase . 'Attendance.php']
             ],
-            'Customers' => [
-                ['label' => 'Layaway', 'href' => $cashierBase . 'Layaway.php'],
-                ['label' => 'My Shifts', 'href' => $cashierBase . 'Shift-Records.php']
+            ' Customers' => [
+                ['label' => ' Layaway', 'href' => $cashierBase . 'Layaway.php'],
+                ['label' => ' My Shifts', 'href' => $cashierBase . 'Shift-Records.php']
             ]
         ];
+
     }
 
     echo '<div class="sidebar">';
@@ -353,14 +354,30 @@ function render_sidebar($context, $activePage, $title = null) {
     }
 
     if ($role === 'Owner') {
-        $dashboardHref = ($context === 'root' ? 'Owner/' : '') . 'Dashboard-Owner.php';
-        $isDashboard = current_page_name($dashboardHref) === $activePage;
+         $dashboardHref = ($context === 'root' ? 'Owner/' : '') . 'Dashboard-Owner.php';
+    $inventoryHref = 'Inventory.php';
+    $hrHref = 'HR-Summary.php';
 
-        echo '<ul class="sidebar-top-link">';
-        echo '<li class="' . ($isDashboard ? 'active' : '') . '">
+    $isDashboard = current_page_name($dashboardHref) === $activePage;
+    $isInventory = current_page_name($inventoryHref) === $activePage;
+    $isHR = current_page_name($hrHref) === $activePage;
+
+    echo '<ul class="sidebar-top-link">';
+
+    echo '<li class="' . ($isDashboard ? 'active' : '') . '">
             <a href="' . htmlspecialchars($dashboardHref) . '">Dashboard</a>
           </li>';
-        echo '</ul>';
+
+    echo '<li class="' . ($isInventory ? 'active' : '') . '">
+            <a href="' . htmlspecialchars($inventoryHref) . '">Inventory</a>
+          </li>';
+
+    echo '<li class="' . ($isHR ? 'active' : '') . '">
+            <a href="' . htmlspecialchars($hrHref) . '">HR Summary</a>
+          </li>';
+
+    echo '</ul>';
+
     }
 
     // Cashiers get a separate POS link at the top for quick access, since it's their main function

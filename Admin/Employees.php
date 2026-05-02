@@ -76,7 +76,8 @@ $employees = $conn->query("SELECT * FROM employees ORDER BY created_at DESC");
             <tbody>
             <?php if ($employees && $employees->num_rows > 0): while($row = $employees->fetch_assoc()): ?>
                 <tr>
-                    <td><?php echo htmlspecialchars($row['employee_code']); ?></td>
+                    <!-- default employee-code changed into id to automate the id/code assign-->
+                    <td><?php echo htmlspecialchars($row['id']); ?></td>
                     <td><?php echo htmlspecialchars($row['full_name']); ?></td>
                     <td><?php echo htmlspecialchars($row['position']); ?></td>
                     <td>PHP <?php echo number_format((float)$row['monthly_salary'], 2); ?></td>
@@ -86,7 +87,7 @@ $employees = $conn->query("SELECT * FROM employees ORDER BY created_at DESC");
                         <form method="post">
                             <input type="hidden" name="employee_id" value="<?php echo (int)$row['id']; ?>">
                             <input type="hidden" name="current_status" value="<?php echo htmlspecialchars($row['status']); ?>">
-                            <button type="submit" name="toggle_status" class="status-btn"><?php echo $row['status'] === 'Active' ? 'Deactivate' : 'Activate'; ?></button>
+                            <button type="submit" name="toggle_status" class="status-btn"><?php echo $row['status'] === 'Active' ? 'Archive' : 'Activate'; ?></button>
                         </form>
                     </td>
                 </tr>

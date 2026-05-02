@@ -216,6 +216,8 @@ function proceedOrder() {
     if (modal) modal.style.display = 'block';
 }
 
+//add function for cahsin and output change
+
 function closeTransactionModal() {
     const modal = document.getElementById('transaction-modal');
     if (modal) modal.style.display = 'none';

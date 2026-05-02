@@ -174,6 +174,9 @@ $activeCategory = $categories[0] ?? '';
             <div class="cart-buttons">
                 <button type="button" onclick="cancelOrder()" class="btn-cancel">Cancel Order</button>
                 <button type="button" onclick="proceedOrder()" id="proceed-btn" class="btn-confirm" disabled>Pay</button>
+                <!--no functions yet-->
+                <button type="button" onclick="cancelOrder()" class="btn-cancel">Cash In</button>
+                <button type="button" onclick="cancelOrder()" class="btn-cancel">Cash Out</button>
             </div>
         </div>
     </div>
