@@ -91,6 +91,19 @@ function ensure_core_schema($conn) {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )");
 
+    $conn->query("CREATE TABLE IF NOT EXISTS stock_movements (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        product_id INT NOT NULL,
+        movement_type ENUM('IN','OUT') NOT NULL,
+        quantity INT NOT NULL DEFAULT 0,
+        expiration_date DATE NULL,
+        batch_reference VARCHAR(100) DEFAULT NULL,
+        notes TEXT NULL,
+        created_by INT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_product_expiration (product_id, expiration_date)
+    )");
+
     $conn->query("CREATE TABLE IF NOT EXISTS layaways (
         id INT AUTO_INCREMENT PRIMARY KEY,
         customer_name VARCHAR(120) NOT NULL,
@@ -167,6 +180,11 @@ function ensure_core_schema($conn) {
     $productCode = $conn->query("SHOW COLUMNS FROM inventory LIKE 'product_code'");
     if ($productCode && $productCode->num_rows === 0) {
         $conn->query("ALTER TABLE inventory ADD COLUMN product_code VARCHAR(100) DEFAULT NULL");
+    }
+
+    $cashierSelectable = $conn->query("SHOW COLUMNS FROM discount_rules LIKE 'cashier_selectable'");
+    if ($cashierSelectable && $cashierSelectable->num_rows === 0) {
+        $conn->query("ALTER TABLE discount_rules ADD COLUMN cashier_selectable TINYINT(1) NOT NULL DEFAULT 0");
     }
 
     $settings = [

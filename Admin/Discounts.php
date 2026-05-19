@@ -14,14 +14,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_discount'])) {
     $startAt = !empty($_POST['start_at']) ? date('Y-m-d H:i:s', strtotime($_POST['start_at'])) : null;
     $endAt = !empty($_POST['end_at']) ? date('Y-m-d H:i:s', strtotime($_POST['end_at'])) : null;
     $isActive = isset($_POST['is_active']) ? 1 : 0;
+    $cashierSelectable = isset($_POST['cashier_selectable']) ? 1 : 0;
 
     if ($name !== '' && $value > 0) {
         $stmt = $conn->prepare("INSERT INTO discount_rules
-            (name, discount_type, scope, product_id, discount_value, min_qty, start_at, end_at, is_active, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            (name, discount_type, scope, product_id, discount_value, min_qty, start_at, end_at, is_active, cashier_selectable, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $productParam = $scope === 'product' ? $productId : null;
         $userId = auth_user_id();
-        $stmt->bind_param("sssidissii", $name, $discountType, $scope, $productParam, $value, $minQty, $startAt, $endAt, $isActive, $userId);
+        $stmt->bind_param("sssidissiii", $name, $discountType, $scope, $productParam, $value, $minQty, $startAt, $endAt, $isActive, $cashierSelectable, $userId);
         $stmt->execute();
         $stmt->close();
     }
@@ -80,12 +81,13 @@ $discounts = $conn->query("SELECT d.*, i.product_name
             <label for="end_at">End Date</label>
             <input type="datetime-local" name="end_at" id="end_at">
             <label class="inline-check"><input type="checkbox" name="is_active" checked> <span>Active</span></label>
+            <label class="inline-check"><input type="checkbox" name="cashier_selectable"> <span>Cashier Can Select (radio button in POS)</span></label>
             <button type="submit" name="save_discount">Save Promotion</button>
         </form>
     </div>
     <div class="user-table-wrapper">
         <table class="userTable">
-            <thead><tr><th>Name</th><th>Type</th><th>Scope</th><th>Product</th><th>Value</th><th>Schedule</th><th>Status</th><th>Action</th></tr></thead>
+            <thead><tr><th>Name</th><th>Type</th><th>Scope</th><th>Product</th><th>Value</th><th>Schedule</th><th>Status</th><th>Cashier Option</th><th>Action</th></tr></thead>
             <tbody>
             <?php if ($discounts && $discounts->num_rows > 0): while ($row = $discounts->fetch_assoc()): ?>
                 <tr>
@@ -96,6 +98,7 @@ $discounts = $conn->query("SELECT d.*, i.product_name
                     <td><?php echo $row['discount_type'] === 'percentage' ? number_format((float)$row['discount_value'], 2) . '%' : 'PHP ' . number_format((float)$row['discount_value'], 2); ?></td>
                     <td><?php echo htmlspecialchars(($row['start_at'] ?: '-') . ' to ' . ($row['end_at'] ?: '-')); ?></td>
                     <td><?php echo (int)$row['is_active'] === 1 ? 'Active' : 'Inactive'; ?></td>
+                    <td><?php echo (int)($row['cashier_selectable'] ?? 0) === 1 ? 'Yes (Radio)' : 'No'; ?></td>
                     <td>
                         <form method="post">
                             <input type="hidden" name="discount_id" value="<?php echo (int)$row['id']; ?>">
@@ -104,7 +107,7 @@ $discounts = $conn->query("SELECT d.*, i.product_name
                     </td>
                 </tr>
             <?php endwhile; else: ?>
-                <tr><td colspan="8">No discount rules yet.</td></tr>
+                <tr><td colspan="9">No discount rules yet.</td></tr>
             <?php endif; ?>
             </tbody>
         </table>

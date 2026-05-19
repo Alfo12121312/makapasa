@@ -66,6 +66,25 @@ $sessionOpen = $session && $session['status'] === 'Open';
 $canManualDiscount = cashier_can_apply_discounts($conn);
 $discountRules = fetch_active_discount_rules($conn);
 
+// Get cashier-selectable discount options
+$cashierSelectableStmt = $conn->prepare("SELECT id, name, discount_type, discount_value, scope, product_id
+                                          FROM discount_rules
+                                          WHERE is_active = 1 
+                                            AND cashier_selectable = 1
+                                            AND (start_at IS NULL OR start_at <= NOW())
+                                            AND (end_at IS NULL OR end_at >= NOW())
+                                          ORDER BY scope DESC, name ASC");
+$cashierSelectableStmt->execute();
+$cashierSelectableResult = $cashierSelectableStmt->get_result();
+$cashierDiscounts = [];
+while ($row = $cashierSelectableResult->fetch_assoc()) {
+    $row['id'] = (int)$row['id'];
+    $row['discount_value'] = (float)$row['discount_value'];
+    $row['product_id'] = $row['product_id'] ? (int)$row['product_id'] : null;
+    $cashierDiscounts[] = $row;
+}
+$cashierSelectableStmt->close();
+
 $products = $conn->query("SELECT id, product_name, category, price, product_unit, stock_quantity
                           FROM inventory
                           WHERE status = 'Active' AND inventory_type = 'Display' AND stock_quantity > 0
@@ -162,10 +181,28 @@ $activeCategory = $categories[0] ?? '';
             <h2>Checkout</h2>
             <div id="cart-items"></div>
             <div class="discount-section">
+                <h3>Sale Type</h3>
                 <label><input type="radio" name="sale_type" value="Retail" checked onchange="updateSaleType()"> Retail</label>
                 <label><input type="radio" name="sale_type" value="Wholesale" onchange="updateSaleType()"> Wholesale</label>
             </div>
-            <p class="small-text">Cashier can apply manual discounts: <strong><?php echo $canManualDiscount ? 'Enabled' : 'Disabled'; ?></strong></p>
+            
+            <?php if (!empty($cashierDiscounts)): ?>
+            <div class="discount-options-section">
+                <h3>Apply Discount</h3>
+                <label><input type="radio" name="selected_discount" value="" checked onchange="updateSelectedDiscount()"> No Discount</label>
+                <?php foreach ($cashierDiscounts as $discount): ?>
+                    <label>
+                        <input type="radio" name="selected_discount" value="<?php echo (int)$discount['id']; ?>" onchange="updateSelectedDiscount()"> 
+                        <?php echo htmlspecialchars($discount['name']); ?>
+                        (<?php echo $discount['discount_type'] === 'percentage' 
+                            ? number_format((float)$discount['discount_value'], 2) . '%' 
+                            : 'PHP ' . number_format((float)$discount['discount_value'], 2); ?>)
+                    </label>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+
+            <p class="small-text">Cashier manual discounts: <strong><?php echo $canManualDiscount ? 'Enabled' : 'Disabled'; ?></strong></p>
             <div class="checkout-summary">
                 <div class="summary-row"><span>Subtotal</span><span id="subtotal">PHP 0.00</span></div>
                 <div class="summary-row"><span>Discount</span><span id="total-discount">PHP 0.00</span></div>
@@ -209,6 +246,7 @@ $activeCategory = $categories[0] ?? '';
 const sessionOpen = <?php echo $sessionOpen ? 'true' : 'false'; ?>;
 const cashierCanApplyDiscounts = <?php echo $canManualDiscount ? 'true' : 'false'; ?>;
 const activeDiscountRules = <?php echo json_encode($discountRules); ?>;
+const cashierSelectableDiscounts = <?php echo json_encode($cashierDiscounts); ?>;
 const inventorySnapshotUrl = '../api/inventory_snapshot.php';
 // const processSaleUrl = '../api/process_sale.php';
 window.processSaleUrl = '/caps-fi/api/process_sale.php';

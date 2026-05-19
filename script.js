@@ -64,8 +64,18 @@ let subtotal = 0;
 let saleType = 'Retail';
 
 function getAutomaticDiscount(item) {
-    if (!Array.isArray(window.activeDiscountRules)) return saleType === 'Wholesale' ? item.price * 0.1 : 0;
     let bestDiscount = saleType === 'Wholesale' ? item.price * 0.1 : 0;
+    
+    // Check if there's a selected discount from radio buttons
+    if (item.selected_discount) {
+        const rule = item.selected_discount;
+        const value = Number(rule.discount_value) || 0;
+        const discount = rule.discount_type === 'percentage' ? item.price * (value / 100) : value;
+        bestDiscount = Math.min(item.price, discount);
+        return bestDiscount;
+    }
+
+    if (!Array.isArray(window.activeDiscountRules)) return bestDiscount;
 
     window.activeDiscountRules.forEach(rule => {
         if ((item.quantity || 1) < (rule.min_qty || 1)) return;
@@ -80,8 +90,14 @@ function getAutomaticDiscount(item) {
 }
 
 function getAutomaticDiscountInfo(item) {
-    const automatic = getAutomaticDiscount(item);
+    let automatic = getAutomaticDiscount(item);
     let label = automatic > 0 ? 'Auto promo' : 'No promo';
+
+    // Check if selected discount is applied
+    if (item.selected_discount) {
+        label = item.selected_discount.name || 'Selected discount';
+        return { value: automatic, label };
+    }
 
     if (saleType === 'Wholesale' && automatic > 0) {
         label = 'Wholesale promo';
@@ -196,6 +212,33 @@ function showCategory(category) {
 function updateSaleType() {
     const checked = document.querySelector('input[name="sale_type"]:checked');
     saleType = checked ? checked.value : 'Retail';
+    updateCart();
+}
+
+function updateSelectedDiscount() {
+    const selectedRadio = document.querySelector('input[name="selected_discount"]:checked');
+    const discountId = selectedRadio ? parseInt(selectedRadio.value) || 0 : 0;
+    
+    // Find the discount in cashierSelectableDiscounts
+    let selectedDiscount = null;
+    if (discountId > 0 && Array.isArray(window.cashierSelectableDiscounts)) {
+        selectedDiscount = window.cashierSelectableDiscounts.find(d => d.id === discountId);
+    }
+    
+    // Apply discount to all cart items
+    cart.forEach(item => {
+        if (selectedDiscount) {
+            // If discount scope is 'product', only apply to matching products
+            if (selectedDiscount.scope === 'product' && selectedDiscount.product_id !== item.id) {
+                item.selected_discount = null;
+            } else {
+                item.selected_discount = selectedDiscount;
+            }
+        } else {
+            item.selected_discount = null;
+        }
+    });
+    
     updateCart();
 }
 

@@ -38,18 +38,71 @@ try {
         $itemTotal = $quantity * ($unitPrice - $discount);
         $total += $itemTotal;
 
-        // Stock check & deduct
+        // Stock check & FIFO deduct
         $stockStmt = $conn->prepare("SELECT stock_quantity FROM inventory WHERE id = ?");
         $stockStmt->bind_param("i", $productId);
         $stockStmt->execute();
         $result = $stockStmt->get_result()->fetch_assoc();
-            if (!$result) throw new Exception('Product not found');
-            $stock = (int)$result['stock_quantity'];
-
+        if (!$result) throw new Exception('Product not found');
+        $stock = (int)$result['stock_quantity'];
         $stockStmt->close();
+
         if ($stock < $quantity) throw new Exception('Insufficient stock');
         $inventoryUpdates[$productId] = $stock - $quantity;
 
+        // FIFO Stock Deduction: Get batches ordered by expiration date
+        $batchStmt = $conn->prepare("SELECT id, quantity, expiration_date FROM stock_movements 
+                                     WHERE product_id = ? AND movement_type = 'IN' AND quantity > 0
+                                     ORDER BY expiration_date ASC, created_at ASC");
+        $batchStmt->bind_param("i", $productId);
+        $batchStmt->execute();
+        $batchResult = $batchStmt->get_result();
+        
+        $batches = [];
+        $totalAvailable = 0;
+        while ($batch = $batchResult->fetch_assoc()) {
+            $batches[] = $batch;
+            $totalAvailable += $batch['quantity'];
+        }
+        $batchStmt->close();
+
+        if ($totalAvailable < $quantity) {
+            throw new Exception('Insufficient stock (batch validation)');
+        }
+
+        // Deduct from batches FIFO
+        $remainingQty = $quantity;
+        foreach ($batches as $batch) {
+            if ($remainingQty <= 0) break;
+
+            if ($batch['quantity'] <= $remainingQty) {
+                // Entire batch is used
+                $used = $batch['quantity'];
+                $updateBatchStmt = $conn->prepare("UPDATE stock_movements SET quantity = 0 WHERE id = ?");
+                $updateBatchStmt->bind_param("i", $batch['id']);
+                $updateBatchStmt->execute();
+                $updateBatchStmt->close();
+                $remainingQty -= $used;
+            } else {
+                // Partial batch used
+                $used = $remainingQty;
+                $newQty = $batch['quantity'] - $used;
+                $updateBatchStmt = $conn->prepare("UPDATE stock_movements SET quantity = ? WHERE id = ?");
+                $updateBatchStmt->bind_param("ii", $newQty, $batch['id']);
+                $updateBatchStmt->execute();
+                $updateBatchStmt->close();
+                $remainingQty = 0;
+            }
+        }
+
+        // Record stock out movement
+        $outBatchRef = 'OUT-' . date('YmdHis') . '-' . substr((string)mt_rand(1000, 9999), -4);
+        $outStmt = $conn->prepare("INSERT INTO stock_movements (product_id, movement_type, quantity, batch_reference, created_by) VALUES (?, 'OUT', ?, ?, ?)");
+        $outStmt->bind_param("iisi", $productId, $quantity, $outBatchRef, $cashierId);
+        $outStmt->execute();
+        $outStmt->close();
+
+        // Update inventory total
         $updateStock = $conn->prepare("UPDATE inventory SET stock_quantity = stock_quantity - ? WHERE id = ?");
         $updateStock->bind_param("ii", $quantity, $productId);
         $updateStock->execute();
