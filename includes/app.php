@@ -2,7 +2,7 @@
 require_once __DIR__ . '/auth.php';
 
 function app_connect() {
-    $conn = new mysqli("localhost", "root", "", "db_agrivet", 3307);
+    $conn = new mysqli("localhost", "root", "", "agrivet_db", 3306);
     if ($conn->connect_error) {
         die("Connection failed: " . $conn->connect_error);
     }
@@ -565,7 +565,7 @@ function render_sidebar($context, $activePage, $title = null) {
                 ['label' => ' Receipts', 'href' => $cashierBase . 'Receipts.php']
             ],
             ' Staff' => [
-                ['label' => '✓ Attendance', 'href' => $cashierBase . 'Attendance.php']
+                ['label' => 'Attendance', 'href' => $cashierBase . 'Attendance.php']
             ],
             ' Customers' => [
                 ['label' => ' Layaway', 'href' => $cashierBase . 'Layaway.php'],

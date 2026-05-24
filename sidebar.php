@@ -55,7 +55,7 @@ function isActive($pages) {
             <a href="Employees.php">👥 Employees</a>
         </li>
         <li class="<?= isActive('Attendance.php') ?>">
-            <a href="Attendance.php">✓ Attendance</a>
+            <a href="Attendance.php">Attendance</a>
         </li>
         <li class="<?= isActive('Payroll.php') ?>">
             <a href="Payroll.php">💰 Payroll</a>
