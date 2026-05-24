@@ -2,7 +2,7 @@
 require_once __DIR__ . '/auth.php';
 
 function app_connect() {
-    $conn = new mysqli("localhost", "root", "", "agrivet_db");
+    $conn = new mysqli("localhost", "root", "", "db_agrivet", 3307);
     if ($conn->connect_error) {
         die("Connection failed: " . $conn->connect_error);
     }
@@ -233,39 +233,42 @@ function fetch_active_discount_rules($conn) {
             FROM discount_rules
             WHERE is_active = 1
               AND (start_at IS NULL OR start_at <= NOW())
-              AND (end_at IS NULL OR end_at >= NOW())
-            ORDER BY scope DESC, discount_value DESC, id DESC";
-    $result = $conn->query($sql);
-    if ($result) {
-        while ($row = $result->fetch_assoc()) {
-            $row['id'] = (int)$row['id'];
-            $row['product_id'] = $row['product_id'] !== null ? (int)$row['product_id'] : null;
-            $row['discount_value'] = (float)$row['discount_value'];
-            $row['min_qty'] = (int)$row['min_qty'];
-            $rules[] = $row;
+              AND (end_at IS NULL OR end_at >= NOW())";
+
+    $res = $conn->query($sql);
+    if ($res) {
+        while ($r = $res->fetch_assoc()) {
+            $rules[] = $r;
         }
+        $res->close();
     }
+
     return $rules;
 }
 
-function calculate_cart_discount_for_item($item, $rules) {
-    $quantity = max(1, (int)$item['quantity']);
+function calculate_cart_discount_for_item($item, $rules, $cartTotalQuantity = null) {
+    $itemQty = max(1, (int)$item['quantity']);
     $price = (float)$item['price'];
     $bestDiscount = 0.0;
 
     foreach ($rules as $rule) {
-        if ($quantity < $rule['min_qty']) {
+        $minQty = (int)($rule['min_qty'] ?? 1);
+
+        // Determine which quantity to use depending on scope
+        $qtyForRule = ($rule['scope'] === 'order') ? ($cartTotalQuantity ?? $itemQty) : $itemQty;
+
+        if ($qtyForRule < $minQty) {
             continue;
         }
-        if ($rule['scope'] === 'product' && (int)$item['id'] !== (int)$rule['product_id']) {
+        if (($rule['scope'] ?? 'order') === 'product' && (int)$item['id'] !== (int)$rule['product_id']) {
             continue;
         }
 
         $discount = 0.0;
-        if ($rule['discount_type'] === 'percentage') {
-            $discount = $price * ($rule['discount_value'] / 100);
+        if (($rule['discount_type'] ?? 'percentage') === 'percentage') {
+            $discount = $price * ((float)$rule['discount_value'] / 100);
         } else {
-            $discount = $rule['discount_value'];
+            $discount = (float)$rule['discount_value'];
         }
         $bestDiscount = max($bestDiscount, min($price, $discount));
     }
@@ -273,12 +276,227 @@ function calculate_cart_discount_for_item($item, $rules) {
     return $bestDiscount;
 }
 
+// ============ EXPIRATION DATE MANAGEMENT ============
+
+function get_product_stock_from_batches($conn, $product_id) {
+    /**
+     * Calculates actual stock from stock_movements (IN - OUT)
+     * This is the source of truth for inventory quantities
+     */
+    $sql = "SELECT COALESCE(SUM(CASE WHEN movement_type = 'IN' THEN quantity ELSE 0 END) - 
+                             SUM(CASE WHEN movement_type = 'OUT' THEN quantity ELSE 0 END), 0) as total_qty
+            FROM stock_movements
+            WHERE product_id = ?";
+    
+    $qty = 0;
+    $stmt = $conn->prepare($sql);
+    if ($stmt) {
+        $stmt->bind_param("i", $product_id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $row = $res->fetch_assoc();
+        $qty = (int)$row['total_qty'];
+        $stmt->close();
+    }
+    return $qty;
+}
+
+function get_product_expiration_batches($conn, $product_id) {
+    /**
+     * Returns all unexpired individual stock batches for a product
+     * Shows each batch with its creation date for tracking
+     */
+    $sql = "SELECT 
+                sm.batch_reference,
+                sm.expiration_date,
+                MIN(sm.created_at) as created_at,
+                (SELECT SUM(CASE WHEN movement_type = 'IN' THEN quantity ELSE 0 END) - 
+                         SUM(CASE WHEN movement_type = 'OUT' THEN quantity ELSE 0 END)
+                  FROM stock_movements 
+                  WHERE batch_reference = sm.batch_reference) as available_qty
+            FROM stock_movements sm
+            WHERE sm.product_id = ? AND sm.movement_type = 'IN'
+              AND (sm.expiration_date IS NULL OR sm.expiration_date > CURDATE())
+            GROUP BY sm.batch_reference, sm.expiration_date
+            ORDER BY sm.expiration_date ASC, created_at ASC";
+    
+    $batches = [];
+    $stmt = $conn->prepare($sql);
+    if ($stmt) {
+        $stmt->bind_param("i", $product_id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        while ($row = $res->fetch_assoc()) {
+            if ((int)$row['available_qty'] > 0) {
+                $batches[] = $row;
+            }
+        }
+        $stmt->close();
+    }
+    return $batches;
+}
+
+function process_auto_expiration($conn, $user_id = 0) {
+    $result = [
+        'processed' => 0,
+        'total_qty_removed' => 0,
+        'errors' => []
+    ];
+
+    $sql = "SELECT 
+                sm.batch_reference,
+                sm.product_id,
+                sm.expiration_date,
+                (SELECT SUM(CASE WHEN movement_type = 'IN' THEN quantity ELSE 0 END) - 
+                         SUM(CASE WHEN movement_type = 'OUT' THEN quantity ELSE 0 END)
+                  FROM stock_movements 
+                  WHERE batch_reference = sm.batch_reference) as available_qty
+            FROM stock_movements sm
+            WHERE sm.movement_type = 'IN'
+              AND sm.expiration_date IS NOT NULL
+              AND sm.expiration_date < CURDATE()
+            GROUP BY sm.batch_reference, sm.expiration_date
+            HAVING available_qty > 0";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        $result['errors'][] = 'Prepare failed: ' . $conn->error;
+        return $result;
+    }
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    while ($row = $res->fetch_assoc()) {
+        $qty = (int)$row['available_qty'];
+        if ($qty <= 0) {
+            continue;
+        }
+
+        $insert_sql = "INSERT INTO stock_movements 
+                       (product_id, movement_type, quantity, expiration_date, batch_reference, created_by, created_at)
+                       VALUES (?, 'OUT', ?, ?, ?, ?, NOW())";
+        $insert_stmt = $conn->prepare($insert_sql);
+        if (!$insert_stmt) {
+            $result['errors'][] = 'Insert prepare failed: ' . $conn->error;
+            continue;
+        }
+        $insert_stmt->bind_param('iissi', $row['product_id'], $qty, $row['expiration_date'], $row['batch_reference'], $user_id);
+        if ($insert_stmt->execute()) {
+            $result['processed']++;
+            $result['total_qty_removed'] += $qty;
+        } else {
+            $result['errors'][] = 'Insert failed for batch ' . $row['batch_reference'] . ': ' . $insert_stmt->error;
+        }
+        $insert_stmt->close();
+
+        $update_sql = "UPDATE inventory 
+                       SET stock_quantity = (
+                           SELECT SUM(CASE WHEN movement_type = 'IN' THEN quantity ELSE 0 END) - 
+                                  SUM(CASE WHEN movement_type = 'OUT' THEN quantity ELSE 0 END)
+                           FROM stock_movements 
+                           WHERE product_id = ?
+                       )
+                       WHERE id = ?";
+        $update_stmt = $conn->prepare($update_sql);
+        if ($update_stmt) {
+            $update_stmt->bind_param('ii', $row['product_id'], $row['product_id']);
+            $update_stmt->execute();
+            $update_stmt->close();
+        }
+    }
+    $stmt->close();
+    return $result;
+}
+
+function get_near_expiration_products($conn, $days_threshold = 7) {
+    /**
+     * Returns products expiring within X days, grouped by severity
+     * $days_threshold: number of days to consider as "near expiration"
+     */
+    $sql = "SELECT 
+                i.id,
+                i.product_name,
+                i.category,
+                i.supplier,
+                SUM(CASE WHEN sm.movement_type = 'IN' THEN sm.quantity ELSE 0 END) - 
+                SUM(CASE WHEN sm.movement_type = 'OUT' THEN sm.quantity ELSE 0 END) as total_qty,
+                MIN(sm.expiration_date) as earliest_expiration,
+                DATEDIFF(MIN(sm.expiration_date), CURDATE()) as days_to_expiry,
+                CASE 
+                    WHEN DATEDIFF(MIN(sm.expiration_date), CURDATE()) < 0 THEN 'Expired'
+                    WHEN DATEDIFF(MIN(sm.expiration_date), CURDATE()) = 0 THEN 'Expiring Today'
+                    WHEN DATEDIFF(MIN(sm.expiration_date), CURDATE()) <= ? THEN 'Near Expiration'
+                    ELSE 'Normal'
+                END as expiration_status
+            FROM inventory i
+            LEFT JOIN stock_movements sm ON i.id = sm.product_id
+            WHERE i.status = 'Active' 
+              AND sm.expiration_date IS NOT NULL
+              AND sm.movement_type = 'IN'
+            GROUP BY i.id
+            HAVING (SUM(CASE WHEN sm.movement_type = 'IN' THEN sm.quantity ELSE 0 END) - 
+                   SUM(CASE WHEN sm.movement_type = 'OUT' THEN sm.quantity ELSE 0 END)) > 0
+              AND (DATEDIFF(MIN(sm.expiration_date), CURDATE()) <= ?)
+            ORDER BY days_to_expiry ASC";
+    
+    $products = [];
+    $stmt = $conn->prepare($sql);
+    if ($stmt) {
+        $stmt->bind_param("ii", $days_threshold, $days_threshold);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        while ($row = $res->fetch_assoc()) {
+            $products[] = $row;
+        }
+        $stmt->close();
+    }
+    return $products;
+}
+
+function get_expired_products($conn) {
+    /**
+     * Returns products that have already expired
+     */
+    $sql = "SELECT 
+                i.id,
+                i.product_name,
+                i.category,
+                i.supplier,
+                SUM(CASE WHEN sm.movement_type = 'IN' THEN sm.quantity ELSE 0 END) - 
+                SUM(CASE WHEN sm.movement_type = 'OUT' THEN sm.quantity ELSE 0 END) as total_qty,
+                MIN(sm.expiration_date) as earliest_expiration,
+                DATEDIFF(CURDATE(), MIN(sm.expiration_date)) as days_expired
+            FROM inventory i
+            LEFT JOIN stock_movements sm ON i.id = sm.product_id
+            WHERE i.status = 'Active' 
+              AND sm.expiration_date IS NOT NULL
+              AND sm.expiration_date < CURDATE()
+              AND sm.movement_type = 'IN'
+            GROUP BY i.id
+            HAVING (SUM(CASE WHEN sm.movement_type = 'IN' THEN sm.quantity ELSE 0 END) - 
+                   SUM(CASE WHEN sm.movement_type = 'OUT' THEN sm.quantity ELSE 0 END)) > 0
+            ORDER BY earliest_expiration ASC";
+    
+    $products = [];
+    $res = $conn->query($sql);
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $products[] = $row;
+        }
+        $res->close();
+    }
+    return $products;
+}
+
+// ============ END EXPIRATION DATE MANAGEMENT ============
+
 function json_response($payload, $statusCode = 200) {
     http_response_code($statusCode);
     header('Content-Type: application/json');
     echo json_encode($payload);
     exit();
 }
+
 
 function current_page_name($path) {
     return basename(parse_url((string)$path, PHP_URL_PATH) ?: '');
@@ -296,13 +514,13 @@ function render_sidebar($context, $activePage, $title = null) {
         $adminBase = $context === 'root' ? 'Admin/' : '';
         $sections = [
             'Sales & Transactions' => [
-                ['label' => ' Transactions', 'href' => $adminBase . 'Transactions.php'],
                 ['label' => ' Shift Reports', 'href' => $adminBase . 'Shift-Report.php'],
                 ['label' => ' Layaway', 'href' => $adminBase . 'Layaway.php']
             ],
             ' Inventory' => [
                 ['label' => ' Products', 'href' => $adminBase . 'Manage-Product.php'],
                 ['label' => ' Stock', 'href' => $adminBase . 'Inventory.php'],
+                ['label' => ' Expiration', 'href' => $adminBase . 'Expiration-Management.php'],
                 ['label' => ' Categories', 'href' => $adminBase . 'Categories.php']
             ],
             ' Customers' => [
@@ -344,7 +562,6 @@ function render_sidebar($context, $activePage, $title = null) {
         $cashierBase = $context === 'root' ? 'Cashier/' : '';
         $sections = [
             ' Sales' => [
-                ['label' => ' Transactions', 'href' => $cashierBase . 'Transactions.php'],
                 ['label' => ' Receipts', 'href' => $cashierBase . 'Receipts.php']
             ],
             ' Staff' => [

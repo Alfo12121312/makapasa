@@ -62,24 +62,38 @@ let cart = [];
 let total = 0;
 let subtotal = 0;
 let saleType = 'Retail';
+let selectedDiscountId = 0;
+let selectedDiscountRule = null;
 
 function getAutomaticDiscount(item) {
-    let bestDiscount = saleType === 'Wholesale' ? item.price * 0.1 : 0;
-    
-    // Check if there's a selected discount from radio buttons
+    // Cashier-selected discount takes full priority
     if (item.selected_discount) {
         const rule = item.selected_discount;
+        if (!rule) return 0;
+
+        const minQty = Number(rule.min_qty || 1);
+        const appliesToProduct = rule.scope !== 'product' || Number(rule.product_id) === Number(item.id);
+        if (!appliesToProduct) return 0;
+
+        const quantityForRule = rule.scope === 'order'
+            ? cart.reduce((sum, cartItem) => sum + Number(cartItem.quantity || 0), 0)
+            : item.quantity;
+
+        if (quantityForRule < minQty) return 0;
+
         const value = Number(rule.discount_value) || 0;
         const discount = rule.discount_type === 'percentage' ? item.price * (value / 100) : value;
-        bestDiscount = Math.min(item.price, discount);
-        return bestDiscount;
+        return Math.min(item.price, discount);
     }
+
+    // Wholesale base discount
+    let bestDiscount = saleType === 'Wholesale' ? item.price * 0.1 : 0;
 
     if (!Array.isArray(window.activeDiscountRules)) return bestDiscount;
 
     window.activeDiscountRules.forEach(rule => {
-        if ((item.quantity || 1) < (rule.min_qty || 1)) return;
-        if (rule.scope === 'product' && Number(rule.product_id) !== Number(item.id)) return;
+        if ((item.quantity || 1) < (Number(rule.min_qty ?? 1))) return;
+        if ((rule.scope || 'order') === 'product' && Number(rule.product_id) !== Number(item.id)) return;
 
         const value = Number(rule.discount_value) || 0;
         const discount = rule.discount_type === 'percentage' ? item.price * (value / 100) : value;
@@ -90,12 +104,19 @@ function getAutomaticDiscount(item) {
 }
 
 function getAutomaticDiscountInfo(item) {
-    let automatic = getAutomaticDiscount(item);
+    const automatic = getAutomaticDiscount(item);
     let label = automatic > 0 ? 'Auto promo' : 'No promo';
 
-    // Check if selected discount is applied
     if (item.selected_discount) {
-        label = item.selected_discount.name || 'Selected discount';
+        const rule = item.selected_discount;
+        const minQty = Number(rule.min_qty ?? 1);
+        const totalQty = cart.reduce((sum, cartItem) => sum + Number(cartItem.quantity || 0), 0);
+        const quantityForRule = (rule.scope || 'order') === 'order' ? totalQty : item.quantity;
+        const ruleApplies = quantityForRule >= minQty;
+        label = rule.name || 'Selected discount';
+        if (!ruleApplies) {
+            label += ` (requires ${minQty} ${rule.scope === 'order' ? 'total items' : 'item(s)'})`;
+        }
         return { value: automatic, label };
     }
 
@@ -105,9 +126,9 @@ function getAutomaticDiscountInfo(item) {
 
     if (Array.isArray(window.activeDiscountRules)) {
         window.activeDiscountRules.forEach(rule => {
-            const minQty = Number(rule.min_qty || 1);
+            const minQty = Number(rule.min_qty ?? 1);
             const matchesQty = (item.quantity || 1) >= minQty;
-            const matchesScope = rule.scope !== 'product' || Number(rule.product_id) === Number(item.id);
+            const matchesScope = (rule.scope || 'order') !== 'product' || Number(rule.product_id) === Number(item.id);
             if (!matchesQty || !matchesScope) return;
 
             const value = Number(rule.discount_value) || 0;
@@ -122,13 +143,28 @@ function getAutomaticDiscountInfo(item) {
 }
 
 function addToCart(id, name, price, unit) {
+    const productCard = document.querySelector('.product-card[data-product-id="' + id + '"]');
+    const stock = productCard ? parseInt(productCard.getAttribute('data-stock') || '0', 10) : 0;
     const existing = cart.find(item => item.id === id && item.unit === unit);
     if (existing) {
+        if (existing.quantity >= stock) {
+            setPosFeedback('Not enough stock available.', 'error');
+            return;
+        }
         existing.quantity += 1;
     } else {
+        if (stock <= 0) {
+            setPosFeedback('This item is out of stock.', 'error');
+            return;
+        }
         cart.push({ id, name, price: Number(price), unit, quantity: 1, manual_discount: 0 });
     }
-    updateCart();
+
+    if (selectedDiscountId > 0) {
+        updateSelectedDiscount();
+    } else {
+        updateCart();
+    }
 }
 
 function updateDiscount(index, discountValue) {
@@ -164,24 +200,79 @@ function updateCart() {
         total += itemTotal;
         totalDiscount += itemDiscountTotal;
 
-        cartItems.innerHTML += `
-            <div class="cart-item">
-                <div class="item-info">
-                    <span class="item-name">${item.name}</span>
-                    <span class="item-qty">x${item.quantity}</span>
-                </div>
-                <div class="item-prices">
-                    <div class="item-price-row"><span>Unit: PHP ${item.price.toFixed(2)}</span></div>
-                    <div class="item-price-row"><span>Total: PHP ${itemTotal.toFixed(2)}</span></div>
-                    <div class="item-discount"><span>Discount: -PHP ${itemDiscountTotal.toFixed(2)}</span></div>
-                    <div class="small-text"><span>Promo: ${manualDiscount > autoDiscount ? 'Manual discount' : autoInfo.label}</span></div>
-                </div>
-                ${window.cashierCanApplyDiscounts ? `<input type="number" step="0.01" min="0" max="${item.price.toFixed(2)}" value="${manualDiscount.toFixed(2)}" onchange="updateDiscount(${index}, this.value)" placeholder="Manual discount">` : ''}
-                <div class="cart-item-controls">
-                    <button type="button" onclick="removeFromCart(${index})" class="btn-remove">Remove</button>
-                </div>
-            </div>
+        const cartItem = document.createElement('div');
+        cartItem.className = 'cart-item';
+
+        const itemInfo = document.createElement('div');
+        itemInfo.className = 'item-info';
+
+        const itemName = document.createElement('span');
+        itemName.className = 'item-name';
+        itemName.textContent = item.name;
+
+        const qtyControls = document.createElement('span');
+        qtyControls.className = 'qty-controls';
+
+        const decrementButton = document.createElement('button');
+        decrementButton.type = 'button';
+        decrementButton.className = 'btn-qty';
+        decrementButton.setAttribute('aria-label', 'Decrease quantity');
+        decrementButton.textContent = '−';
+        decrementButton.addEventListener('click', () => changeCartQuantity(index, -1));
+
+        const quantityLabel = document.createElement('span');
+        quantityLabel.className = 'item-qty';
+        quantityLabel.textContent = item.quantity;
+
+        const incrementButton = document.createElement('button');
+        incrementButton.type = 'button';
+        incrementButton.className = 'btn-qty';
+        incrementButton.setAttribute('aria-label', 'Increase quantity');
+        incrementButton.textContent = '+';
+        incrementButton.addEventListener('click', () => changeCartQuantity(index, 1));
+
+        qtyControls.appendChild(decrementButton);
+        qtyControls.appendChild(quantityLabel);
+        qtyControls.appendChild(incrementButton);
+
+        itemInfo.appendChild(itemName);
+        itemInfo.appendChild(qtyControls);
+
+        const itemPrices = document.createElement('div');
+        itemPrices.className = 'item-prices';
+        itemPrices.innerHTML = `
+            <div class="item-price-row"><span>Unit: PHP ${item.price.toFixed(2)}</span></div>
+            <div class="item-price-row"><span>Total: PHP ${itemTotal.toFixed(2)}</span></div>
+            <div class="item-discount"><span>Discount: -PHP ${itemDiscountTotal.toFixed(2)}</span></div>
+            <div class="small-text"><span>Promo: ${manualDiscount > autoDiscount ? 'Manual discount' : autoInfo.label}</span></div>
         `;
+
+        cartItem.appendChild(itemInfo);
+        cartItem.appendChild(itemPrices);
+
+        if (window.cashierCanApplyDiscounts) {
+            const discountInput = document.createElement('input');
+            discountInput.type = 'number';
+            discountInput.step = '0.01';
+            discountInput.min = '0';
+            discountInput.max = item.price.toFixed(2);
+            discountInput.value = manualDiscount.toFixed(2);
+            discountInput.placeholder = 'Manual discount';
+            discountInput.addEventListener('change', event => updateDiscount(index, event.target.value));
+            cartItem.appendChild(discountInput);
+        }
+
+        const cartItemControls = document.createElement('div');
+        cartItemControls.className = 'cart-item-controls';
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.className = 'btn-remove';
+        removeButton.textContent = 'Remove';
+        removeButton.addEventListener('click', () => removeFromCart(index));
+        cartItemControls.appendChild(removeButton);
+        cartItem.appendChild(cartItemControls);
+
+        cartItems.appendChild(cartItem);
     });
 
     if (subtotalEl) subtotalEl.textContent = `PHP ${subtotal.toFixed(2)}`;
@@ -193,6 +284,27 @@ function updateCart() {
 function removeFromCart(index) {
     cart.splice(index, 1);
     updateCart();
+}
+
+function changeCartQuantity(index, delta) {
+    if (!cart[index]) return;
+    const newQuantity = cart[index].quantity + delta;
+    if (newQuantity <= 0) {
+        cart.splice(index, 1);
+    } else {
+        const productCard = document.querySelector('.product-card[data-product-id="' + cart[index].id + '"]');
+        const stock = productCard ? parseInt(productCard.getAttribute('data-stock') || '9999', 10) : 9999;
+        if (newQuantity > stock) {
+            setPosFeedback('Not enough stock available.', 'error');
+            return;
+        }
+        cart[index].quantity = newQuantity;
+    }
+    if (selectedDiscountId > 0) {
+        updateSelectedDiscount();
+    } else {
+        updateCart();
+    }
 }
 
 function showCategory(category) {
@@ -218,32 +330,35 @@ function updateSaleType() {
 function updateSelectedDiscount() {
     const selectedRadio = document.querySelector('input[name="selected_discount"]:checked');
     const discountId = selectedRadio ? parseInt(selectedRadio.value) || 0 : 0;
-    
-    // Find the discount in cashierSelectableDiscounts
-    let selectedDiscount = null;
-    if (discountId > 0 && Array.isArray(window.cashierSelectableDiscounts)) {
-        selectedDiscount = window.cashierSelectableDiscounts.find(d => d.id === discountId);
+
+    selectedDiscountId = discountId;
+    selectedDiscountRule = null;
+
+    if (selectedDiscountId > 0 && Array.isArray(window.cashierSelectableDiscounts)) {
+        selectedDiscountRule = window.cashierSelectableDiscounts.find(d => Number(d.id) === selectedDiscountId) || null;
     }
-    
-    // Apply discount to all cart items
+
+    // Apply or clear discount on every cart item
     cart.forEach(item => {
-        if (selectedDiscount) {
-            // If discount scope is 'product', only apply to matching products
-            if (selectedDiscount.scope === 'product' && selectedDiscount.product_id !== item.id) {
-                item.selected_discount = null;
-            } else {
-                item.selected_discount = selectedDiscount;
-            }
+        if (selectedDiscountRule) {
+            const scopeOk = selectedDiscountRule.scope !== 'product' || Number(selectedDiscountRule.product_id) === Number(item.id);
+            item.selected_discount = scopeOk ? selectedDiscountRule : null;
         } else {
             item.selected_discount = null;
         }
     });
-    
+
     updateCart();
 }
 
 function cancelOrder() {
     cart = [];
+    selectedDiscountId = 0;
+    selectedDiscountRule = null;
+    const noDiscountRadio = document.querySelector('input[name="selected_discount"][value=""]');
+    if (noDiscountRadio) {
+        noDiscountRadio.checked = true;
+    }
     updateCart();
 }
 
@@ -252,11 +367,14 @@ function proceedOrder() {
     const totalEl = document.getElementById('trans-total');
     const amountReceived = document.getElementById('amount-received');
     const changeAmount = document.getElementById('change-amount');
+    const confirmBtn = document.querySelector('.btn-confirm-trans');
     const modal = document.getElementById('transaction-modal');
     if (totalEl) totalEl.textContent = `PHP ${total.toFixed(2)}`;
     if (amountReceived) amountReceived.value = '';
-    if (changeAmount) changeAmount.textContent = 'PHP 0.00';
+    if (changeAmount) { changeAmount.textContent = 'PHP 0.00'; changeAmount.style.color = ''; }
+    if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.style.opacity = '0.5'; confirmBtn.style.cursor = 'not-allowed'; }
     if (modal) modal.style.display = 'block';
+    setTimeout(() => { if (amountReceived) amountReceived.focus(); }, 50);
 }
 
 //add function for cahsin and output change
@@ -269,9 +387,19 @@ function closeTransactionModal() {
 function calculateChange() {
     const amountReceived = document.getElementById('amount-received');
     const changeAmount = document.getElementById('change-amount');
+    const confirmBtn = document.querySelector('.btn-confirm-trans');
     if (!amountReceived || !changeAmount) return;
     const received = parseFloat(amountReceived.value) || 0;
-    changeAmount.textContent = `PHP ${(received - total).toFixed(2)}`;
+    const change = received - total;
+    changeAmount.textContent = `PHP ${change.toFixed(2)}`;
+    if (confirmBtn) {
+        confirmBtn.disabled = change < 0;
+        confirmBtn.style.opacity = change < 0 ? '0.5' : '';
+        confirmBtn.style.cursor = change < 0 ? 'not-allowed' : '';
+    }
+    if (changeAmount) {
+        changeAmount.style.color = change < 0 ? '#c0392b' : '';
+    }
 }
 
 function setPosFeedback(message, type) {
@@ -329,21 +457,33 @@ function confirmTransaction() {
     }
     if (!window.processSaleUrl) return;
 
+    // Get selected discount ID from radio buttons
+    const selectedRadio = document.querySelector('input[name="selected_discount"]:checked');
+    const selectedDiscountId = selectedRadio ? parseInt(selectedRadio.value) || 0 : 0;
+    const payloadCart = cart.map(item => ({
+        id: item.id,
+        quantity: item.quantity,
+        price: item.price,
+        unit: item.unit,
+        manual_discount: Number(item.manual_discount || 0)
+    }));
+
     fetch(window.processSaleUrl, {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            cart,
+            cart: payloadCart,
             sale_type: saleType,
+            selected_discount_id: selectedDiscountId,
             amount_received: received,
             change_amount: received - total
         })
     })
         .then(async response => {
-            const text = await response.text();
-            console.log("RAW RESPONSE:", text);
-            return JSON.parse(text);
+            const data = await response.json();
+            console.log('RAW RESPONSE:', data);
+            return data;
         })
         .then(data => {
             if (!data.success) {

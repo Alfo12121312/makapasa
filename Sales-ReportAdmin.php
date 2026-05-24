@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . "/../includes/app.php";
-require_roles(['Owner'], 'Login.php');
+require_roles(['Admin'], 'Login.php');
 
 $conn = new mysqli("localhost", "root", "", "db_agrivet", 3307);
 if ($conn->connect_error) {
@@ -74,7 +74,7 @@ while ($row = $sales_result->fetch_assoc()) {
 </head>
 <body>
 
-<?php render_sidebar('owner', 'Sales-ReportOwner.php', auth_user_role()); ?>
+<?php render_sidebar('admin', 'Sales-ReportAdmin.php', auth_user_role()); ?>
 
 <div class="userAdmin">
 

@@ -1,18 +1,14 @@
 <?php
 require_once __DIR__ . "/../includes/auth.php";
 require_roles(['Owner'], '../Login.php');
-require_once __DIR__ . "/../includes/app.php";
+require_once __DIR__ . '/../includes/app.php';
 
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "agrivet_db";
-
-$conn = new mysqli($servername, $username, $password, $dbname);
-
+$conn = new mysqli("localhost", "root", "", "db_agrivet", 3307);
 if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
+
+
 
 // INVENTORY DATA 
 $sql = "SELECT id, product_name, stock_quantity, product_unit, category, supplier, expiration_date, inventory_type
@@ -36,8 +32,7 @@ $suppliers_result  = $conn->query("SELECT DISTINCT supplier FROM inventory WHERE
 </head>
 
 <body>
-    <?php render_sidebar('Owner','Inventory','Owner'); ?>
-
+<?php render_sidebar('owner', 'Inventory.php', 'Owner'); ?>
 <!-- SIDEBAR NAVIGATION (RESTORED) -->
 <!-- <div class="sidebar">
     <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
@@ -52,9 +47,9 @@ $suppliers_result  = $conn->query("SELECT DISTINCT supplier FROM inventory WHERE
         <li><a href="../Sales-Report.php">Sales Report</a></li>
         <li><a href="../logout.php">Logout</a></li>
     </ul>
-</div> -->
+</div>
 
-<!-- MAIN -->
+MAIN -->
 <div class="userAdmin">
 
 <h1>Inventory </h1>
