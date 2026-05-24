@@ -16,14 +16,21 @@ if ($conn->connect_error) {
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )"); */
 
+// Ensure expiration_date exists on the purchase_orders table
+$checkExpirationColumn = $conn->query("SHOW COLUMNS FROM purchase_orders LIKE 'expiration_date'");
+if ($checkExpirationColumn && $checkExpirationColumn->num_rows === 0) {
+    $conn->query("ALTER TABLE purchase_orders ADD COLUMN expiration_date DATE NULL");
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_po'])) {
     $supplier = trim($_POST['supplier']);
     $item_name = trim($_POST['item_name']);
+    $expiration_date = !empty($_POST['expiration_date']) ? $_POST['expiration_date'] : null;
     $quantity = (float)$_POST['quantity'];
     $unit_cost = (float)$_POST['unit_cost'];
     if ($supplier !== '' && $item_name !== '') {
-        $stmt = $conn->prepare("INSERT INTO purchase_orders (supplier, item_name, quantity, unit_cost) VALUES (?, ?, ?, ?)");
-        $stmt->bind_param("ssdd", $supplier, $item_name, $quantity, $unit_cost);
+        $stmt = $conn->prepare("INSERT INTO purchase_orders (supplier, item_name, expiration_date, quantity, unit_cost) VALUES (?, ?, ?, ?, ?)");
+        $stmt->bind_param("sssdd", $supplier, $item_name, $expiration_date, $quantity, $unit_cost);
         $stmt->execute();
         $stmt->close();
     }
@@ -61,6 +68,7 @@ $orders = $conn->query("SELECT *, (quantity * unit_cost) AS total_cost FROM purc
         <form method="post">
             <input type="text" name="supplier" placeholder="Supplier" required>
             <input type="text" name="item_name" placeholder="Item Name" required>
+            <input type="date" name="expiration_date" placeholder="Expiration Date">
             <input type="number" step="0.01" min="0" name="quantity" placeholder="Quantity" required>
             <input type="number" step="0.01" min="0" name="unit_cost" placeholder="Unit Cost" required>
             <button type="submit" name="add_po">Create PO</button>
@@ -68,12 +76,13 @@ $orders = $conn->query("SELECT *, (quantity * unit_cost) AS total_cost FROM purc
     </div>
     <div class="user-table-wrapper">
         <table class="userTable">
-            <thead><tr><th>Supplier</th><th>Item</th><th>Qty</th><th>Unit Cost</th><th>Total Cost</th><th>Status</th><th>Update</th></tr></thead>
+            <thead><tr><th>Supplier</th><th>Item</th><th>Expiration</th><th>Qty</th><th>Unit Cost</th><th>Total Cost</th><th>Status</th><th>Update</th></tr></thead>
             <tbody>
             <?php if ($orders && $orders->num_rows > 0): while($row = $orders->fetch_assoc()): ?>
                 <tr>
                     <td><?php echo htmlspecialchars($row['supplier']); ?></td>
                     <td><?php echo htmlspecialchars($row['item_name']); ?></td>
+                    <td><?php echo htmlspecialchars($row['expiration_date'] ?? 'N/A'); ?></td>
                     <td><?php echo number_format((float)$row['quantity'], 2); ?></td>
                     <td>PHP <?php echo number_format((float)$row['unit_cost'], 2); ?></td>
                     <td>PHP <?php echo number_format((float)$row['total_cost'], 2); ?></td>

@@ -21,6 +21,9 @@ if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 
+// Auto process expired batches by creating stock-out entries for expired stock
+process_auto_expiration($conn, auth_user_id());
+
 // Add inventory_type and product_code columns if they do not exist
 $checkType = $conn->query("SHOW COLUMNS FROM inventory LIKE 'inventory_type'");
 if ($checkType && $checkType->num_rows === 0) {
