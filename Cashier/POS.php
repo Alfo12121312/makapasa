@@ -67,7 +67,7 @@ $canManualDiscount = cashier_can_apply_discounts($conn);
 $discountRules = fetch_active_discount_rules($conn);
 
 // Get cashier-selectable discount options
-$cashierSelectableStmt = $conn->prepare("SELECT id, name, discount_type, discount_value, scope, product_id
+$cashierSelectableStmt = $conn->prepare("SELECT id, name, discount_type, discount_value, scope, product_id, min_qty
                                           FROM discount_rules
                                           WHERE is_active = 1 
                                             AND cashier_selectable = 1
@@ -81,6 +81,7 @@ while ($row = $cashierSelectableResult->fetch_assoc()) {
     $row['id'] = (int)$row['id'];
     $row['discount_value'] = (float)$row['discount_value'];
     $row['product_id'] = $row['product_id'] ? (int)$row['product_id'] : null;
+    $row['min_qty'] = isset($row['min_qty']) ? (int)$row['min_qty'] : 1;
     $cashierDiscounts[] = $row;
 }
 $cashierSelectableStmt->close();
@@ -196,7 +197,9 @@ $activeCategory = $categories[0] ?? '';
                         <?php echo htmlspecialchars($discount['name']); ?>
                         (<?php echo $discount['discount_type'] === 'percentage' 
                             ? number_format((float)$discount['discount_value'], 2) . '%' 
-                            : 'PHP ' . number_format((float)$discount['discount_value'], 2); ?>)
+                            : 'PHP ' . number_format((float)$discount['discount_value'], 2); ?>,
+                        <?php echo ($discount['scope'] ?? 'order') === 'product' ? 'product only' : 'order-wide'; ?>
+                        <?php $minQty = isset($discount['min_qty']) ? (int)$discount['min_qty'] : 1; echo ($minQty > 1) ? 'min ' . $minQty . ' items' : ''; ?>)
                     </label>
                 <?php endforeach; ?>
             </div>
@@ -248,8 +251,7 @@ const cashierCanApplyDiscounts = <?php echo $canManualDiscount ? 'true' : 'false
 const activeDiscountRules = <?php echo json_encode($discountRules); ?>;
 const cashierSelectableDiscounts = <?php echo json_encode($cashierDiscounts); ?>;
 const inventorySnapshotUrl = '../api/inventory_snapshot.php';
-// const processSaleUrl = '../api/process_sale.php';
-window.processSaleUrl = '/caps-fi/api/process_sale.php';
+window.processSaleUrl = '../api/process_sale.php';
 </script>
 <script src="../script.js"></script>
 </body>

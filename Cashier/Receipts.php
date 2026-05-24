@@ -4,7 +4,7 @@ require_once __DIR__ . "/../includes/app.php";
 
 require_roles(['Cashier'], '../Login.php');
 
-$conn = new mysqli("localhost", "root", "", "agrivet_db");
+$conn = new mysqli("localhost", "root", "", "db_agrivet", 3307);
 render_sidebar('child', $_SERVER['PHP_SELF'], 'Agrivet Cashier');
 
 if ($conn->connect_error) {

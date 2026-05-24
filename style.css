@@ -2,7 +2,7 @@
 margin:0;
 padding:0;
 box-sizing:border-box;
-font-family:Arial, Helvetica, sans-serif;
+font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 /* Main layout - Flex container for sidebar + content */
@@ -20,8 +20,7 @@ min-height:100vh;
     align-items: center;
     height: 100vh;
     background:  #2c3e50;
-    /* background: linear-gradient(135deg, #1abc9c, #2c3e50); */
-    font-family: Arial, Helvetica, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 .login-container {
@@ -317,7 +316,7 @@ border-bottom:1px solid #ddd;
     border-bottom: 2px solid #3498db;
     padding-bottom: 10px;
 }
-
+ */
 /* end */
 
 /* USER TABLE - Displays users/products/inventory data */
@@ -452,7 +451,7 @@ background:rgba(24, 119, 201, 0.82);
 
 .form-container label {
     grid-column: 1 / -1;
-    font-weight: bold;
+    font-weight: 700;
     margin-bottom: 0px;/* if some label got messed up put -8px  */
     display: block;
     font-size: 13px;
@@ -520,6 +519,23 @@ background:rgba(24, 119, 201, 0.82);
     margin-bottom: 5px;
 }
 
+.alert-warning {
+    background: #fff1f0;
+    border: 1px solid #f5c2c7;
+    border-radius: 5px;
+    padding: 15px;
+    margin-bottom: 20px;
+    color: #842029;
+}
+
+.near-expiration td {
+    background-color: rgba(255, 235, 205, 0.75);
+}
+
+.expired td {
+    background-color: rgba(255, 205, 210, 0.9);
+}
+
 /* Dashboard Cards */
 .dashboard-cards {
     display: flex;
@@ -569,7 +585,7 @@ background:rgba(24, 119, 201, 0.82);
     display: flex;
     gap: 20px;
     align-items: flex-start;
-    min-height: calc(120vh - 170px);
+    min-height: calc(100vh - 160px);
 }
 
 .products-section {
@@ -628,7 +644,7 @@ background:rgba(24, 119, 201, 0.82);
 
 .product-card p {
     font-size: 18px;
-    font-weight: bold;
+    font-weight: 700;
     color: #27ae60;
     margin-bottom: 10px;
 }
@@ -655,8 +671,7 @@ background:rgba(24, 119, 201, 0.82);
 }
 
 .checkout-sidebar {
-    /* changed to make cash-in and out inside */
-    max-height: 100vh; 
+    max-height: 80vh;
     display: flex;
     flex-direction: column;
 }
@@ -699,7 +714,7 @@ background:rgba(24, 119, 201, 0.82);
 
 /* Item name with bold styling for product identification */
 .item-name {
-    font-weight: bold;
+    font-weight: 700;
     color: #2c3e50;
     flex: 1;
 }
@@ -711,6 +726,35 @@ background:rgba(24, 119, 201, 0.82);
     padding: 2px 8px;
     border-radius: 3px;
     font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    min-width: 32px;
+    justify-content: center;
+}
+
+.qty-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-qty {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 4px;
+    background: #3498db;
+    color: #fff;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-qty:hover {
+    background: #2573b4;
 }
 
 /* Prices breakdown in cart item - Shows unit price and total */
@@ -731,7 +775,7 @@ background:rgba(24, 119, 201, 0.82);
 /* Discount display - Green bold text to highlight savings */
 .item-discount {
     color: #27ae60;
-    font-weight: bold;
+    font-weight: 700;
 }
 
 /* Cart item control buttons - Remove button row at bottom */
@@ -804,7 +848,7 @@ background:rgba(24, 119, 201, 0.82);
 
 /* Highlight right-side amount in bold dark color */
 .summary-row span:last-child {
-    font-weight: bold;
+    font-weight: 700;
     color: #2c3e50;
 }
 
@@ -819,7 +863,7 @@ background:rgba(24, 119, 201, 0.82);
 
 #cart-total {
     font-size: 18px;
-    font-weight: bold;
+    font-weight: 700;
     color: #27ae60;
 }
 
@@ -871,7 +915,7 @@ background:rgba(24, 119, 201, 0.82);
 
 .product-price {
     font-size: 16px;
-    font-weight: bold;
+    font-weight: 700;
     color: #27ae60;
 }
 
@@ -940,7 +984,7 @@ background:rgba(24, 119, 201, 0.82);
 
 .modal-content-start label {
     text-align: left;
-    font-weight: bold;
+    font-weight: 700;
     color: #2c3e50;
 }
 
@@ -959,7 +1003,7 @@ background:rgba(24, 119, 201, 0.82);
     border-radius: 4px;
     cursor: pointer;
     font-size: 16px;
-    font-weight: bold;
+    font-weight: 700;
 }
 
 .modal-content-start button:hover {
@@ -991,7 +1035,7 @@ background:rgba(24, 119, 201, 0.82);
     display: block;
     margin-top: 15px;
     margin-bottom: 8px;
-    font-weight: bold;
+    font-weight: 700;
 }
 
 /* Payment input field - Full width for amount received entry */
@@ -1008,7 +1052,7 @@ background:rgba(24, 119, 201, 0.82);
     color: #aaa;
     float: right;
     font-size: 28px;
-    font-weight: bold;
+    font-weight: 700;
     cursor: pointer;
     /* Gray by default, darkens on hover */
 }
@@ -1081,7 +1125,7 @@ background:rgba(24, 119, 201, 0.82);
     border-radius: 5px;
     cursor: pointer;
     font-size: 14px;
-    font-weight: bold;
+    font-weight: 700;
 }
 
 .btn-end-shift:hover {
@@ -1307,7 +1351,7 @@ background:rgba(24, 119, 201, 0.82);
     .userTable td:before {
         content: attr(data-label);
         float: left;
-        font-weight: bold;
+        font-weight: 700;
         color: #1abc9c;
     }
 
@@ -1407,7 +1451,7 @@ background:rgba(24, 119, 201, 0.82);
     }
 
     .form-container form {
-        max-width: 600px;
+        max-width: 500px;
     }
 }
 
@@ -1468,7 +1512,7 @@ background:rgba(24, 119, 201, 0.82);
 }
 
 .filter-label {
-    font-weight: bold;
+    font-weight: 700;
     color: #2c3e50;
     white-space: nowrap;
 }
@@ -1583,7 +1627,7 @@ background:rgba(24, 119, 201, 0.82);
 
 .report-card .value {
     font-size: 32px;
-    font-weight: bold;
+    font-weight: 700;
     color: #2c3e50;
 }
 
@@ -1611,7 +1655,7 @@ background:rgba(24, 119, 201, 0.82);
     color: white;
     padding: 12px;
     text-align: left;
-    font-weight: bold;
+    font-weight: 700;
 }
 
 .sales-table td {
@@ -1714,24 +1758,33 @@ background:rgba(24, 119, 201, 0.82);
     align-self: flex-start;
     height: 100vh;
     padding: 20px 14px;
-    background: linear-gradient(180deg, var(--nav-bg-start) 0%, var(--nav-bg-end) 100%);
-    border-right: 1px solid rgba(255, 255, 255, 0.12);
+    background: linear-gradient(180deg, var(--nav-bg-start, #12263a) 0%, var(--nav-bg-end, #1a3a52) 100%);
+    border-right: 2px solid rgba(255, 255, 255, 0.08);
     box-shadow: 4px 0 24px rgba(8, 24, 41, 0.2);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 .sidebar .title {
     margin-top: 8px;
+    font-size: 15px;
+    font-weight: 700;
     color: var(--nav-text);
-    letter-spacing: 0.3px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
 }
 
 .sidebar .logo {
     margin: 14px auto 18px;
     display: block;
     width: 72px;
-    border-radius: 14px;
+    border-radius: 12px;
     background: rgba(255, 255, 255, 0.08);
     padding: 8px;
+    transition: 0.2s;
+}
+
+.sidebar .logo:hover {
+    background: rgba(255, 255, 255, 0.12);
 }
 
 .sidebar ul li {
@@ -1739,15 +1792,34 @@ background:rgba(24, 119, 201, 0.82);
 }
 
 .sidebar ul li a {
-    border-radius: 10px;
+    border-radius: 8px;
     font-weight: 600;
-    padding: 12px 14px;
+    padding: 11px 14px;
     color: var(--nav-link);
+    font-size: 14px;
+    transition: all 0.2s ease;
+    margin: 2px 4px;
+    display: block;
 }
 
 .sidebar ul li a:hover,
 .sidebar ul li.active a {
     background: var(--nav-active-bg);
+    color: #ffffff;
+    transform: translateX(3px);
+}
+
+/* Section headers in sidebar */
+.sidebar ul li.menu-section {
+    padding: 14px 16px 8px 16px;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    margin: 12px 8px 6px 8px;
+    display: block;
+    line-height: 1;
 }
 
 .menu-toggle {
@@ -2324,15 +2396,22 @@ select {
     background: transparent;
     border: 0;
     color: inherit;
-    padding: 10px 14px;
+    padding: 12px 16px;
     font-weight: 700;
+    font-size: 13px;
     text-align: left;
     cursor: pointer;
-    border-radius: 10px;
+    border-radius: 8px;
+    letter-spacing: 0.3px;
+    color: rgba(255, 255, 255, 0.6);
+    transition: all 0.2s ease;
+    margin: 12px 8px 6px 8px;
+    text-transform: uppercase;
 }
 
 .sidebar-group-toggle:hover {
     background: var(--nav-active-bg);
+    color: #ffffff;
 }
 
 .sidebar-submenu,
@@ -2354,10 +2433,18 @@ select {
     transition: transform 0.2s ease;
 }
 
+.sidebar-submenu li a {
+    font-size: 13px;
+    font-weight: 500;
+    padding: 9px 16px;
+    margin: 3px 8px;
+}
+
 .sidebar-submenu li.active a,
 .sidebar-footer li a:hover {
     font-weight: 700;
     background: var(--nav-active-bg);
+    color: #ffffff;
 }
 
 .out-of-stock {
@@ -2410,7 +2497,47 @@ select {
 .sidebar-top-link {
     list-style: none;
     padding: 0;
-    margin: 0 0 8px 0;
+    margin: 0 0 20px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 12px;
+}
+
+.sidebar-top-link li a {
+    font-size: 14px;
+    font-weight: 600;
+    padding: 12px 16px;
+    margin: 0 8px;
+    display: block;
+    color: var(--nav-link, #b3d9ff);
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-radius: 8px;
+}
+
+.sidebar-top-link li a:hover,
+.sidebar-top-link li.active a {
+    background: var(--nav-active-bg, rgba(24, 119, 201, 0.92));
+    color: #ffffff;
+}
+
+.sidebar-footer {
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-footer li a {
+    font-size: 13px;
+    font-weight: 600;
+    padding: 12px 16px;
+    margin: 0 8px;
+    display: block;
+    color: var(--nav-link, #b3d9ff);
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-radius: 8px;
 }
 
 .status-text.ok {
