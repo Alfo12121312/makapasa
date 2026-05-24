@@ -2,7 +2,7 @@
 require_once __DIR__ . "/../includes/app.php";
 require_roles(['Owner'], 'Login.php');
 
-$conn = new mysqli("localhost", "root", "", "db_agrivet", 3307);
+$conn = new mysqli("localhost", "root", "", "agrivet_db");
 if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }

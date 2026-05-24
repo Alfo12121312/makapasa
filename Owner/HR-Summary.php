@@ -3,7 +3,7 @@ require_once __DIR__ . "/../includes/auth.php";
 require_roles(['Owner'], '../Login.php');
 require_once __DIR__ . "/../includes/app.php";
 
-$conn = new mysqli("localhost", "root", "", "db_agrivet", 3307);
+$conn = new mysqli("localhost", "root", "", "agrivet_db");
 if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
@@ -56,7 +56,7 @@ $summary = $conn->query("SELECT e.full_name, e.position, a.attendance_date, a.ti
     <link rel="stylesheet" href="../style.css">
 </head>
 <body>
-    <?php render_sidebar('owner', 'HR-Summary.php', 'Owner'); ?>
+    <?php render_sidebar('Owner','HR-Summary','Owner'); ?>
 <!-- <div class="sidebar">
     <button class="menu-toggle" onclick="toggleSidebar()">&#9776;</button>
     <h2 class="title">Agrivet Owner</h2>

@@ -25,41 +25,8 @@ if (!$session || $session['status'] !== 'Open') {
 
 $cart = $payload['cart'] ?? [];
 $saleType = in_array($payload['sale_type'] ?? 'Retail', ['Retail', 'Wholesale', 'Layaway']) ? $payload['sale_type'] : 'Retail';
-$selectedDiscountId = (int)($payload['selected_discount_id'] ?? 0);
 $saleReference = 'SALE-' . date('YmdHis') . '-' . substr((string)mt_rand(1000, 9999), -4);
 $total = 0.0;
-$appliedDiscount = null;
-$cartTotalQuantity = 0;
-foreach ($cart as $item) {
-    $cartTotalQuantity += max(0, (int)($item['quantity'] ?? 0));
-}
-
-// Fetch selected discount rule if provided
-if ($selectedDiscountId > 0) {
-    $discountStmt = $conn->prepare("SELECT id, discount_type, discount_value, scope, product_id, min_qty, start_at, end_at, is_active
-                                     FROM discount_rules 
-                                     WHERE id = ? AND is_active = 1");
-    $discountStmt->bind_param("i", $selectedDiscountId);
-    $discountStmt->execute();
-    $appliedDiscount = $discountStmt->get_result()->fetch_assoc();
-    $discountStmt->close();
-    
-    // Validate discount date range
-    if ($appliedDiscount) {
-        $now = date('Y-m-d H:i:s');
-        if ($appliedDiscount['start_at'] && $appliedDiscount['start_at'] > $now) {
-            json_response(['success' => false, 'message' => 'Discount has not started yet.'], 400);
-        }
-        if ($appliedDiscount['end_at'] && $appliedDiscount['end_at'] < $now) {
-            json_response(['success' => false, 'message' => 'Discount has expired.'], 400);
-        }
-    } else {
-        json_response(['success' => false, 'message' => 'Selected discount is not available.'], 400);
-    }
-}
-
-// Load active automatic discount rules for fallback (auto promos)
-$activeDiscountRules = fetch_active_discount_rules($conn);
 
 $conn->begin_transaction();
 try {
@@ -67,40 +34,7 @@ try {
         $productId = (int)$item['id'];
         $quantity = (int)$item['quantity'];
         $unitPrice = (float)$item['price'];
-        
-        // Calculate discount: selected discount takes priority; otherwise apply automatic promos/wholesale
-        $discount = 0.0;
-        if ($appliedDiscount) {
-            $discountAppliesToProduct = ($appliedDiscount['scope'] === 'order') || 
-                                        ($appliedDiscount['scope'] === 'product' && (int)$appliedDiscount['product_id'] === $productId);
-            $ruleQty = ($appliedDiscount['scope'] === 'order') ? $cartTotalQuantity : $quantity;
-            $requiredQty = (int)$appliedDiscount['min_qty'] ?: 1;
-
-            if ($discountAppliesToProduct && $ruleQty >= $requiredQty) {
-                if ($appliedDiscount['discount_type'] === 'percentage') {
-                    $discount = $unitPrice * ((float)$appliedDiscount['discount_value'] / 100);
-                } else {
-                    $discount = (float)$appliedDiscount['discount_value'];
-                }
-                $discount = min($unitPrice, $discount);
-            }
-        } else {
-            // Automatic discounts: evaluate active rules and wholesale base discount
-            if (!empty($activeDiscountRules)) {
-                $discount = calculate_cart_discount_for_item(['id' => $productId, 'price' => $unitPrice, 'quantity' => $quantity], $activeDiscountRules, $cartTotalQuantity);
-            }
-            if ($saleType === 'Wholesale') {
-                $wholesale = $unitPrice * 0.1; // 10% wholesale
-                $discount = max($discount, min($unitPrice, $wholesale));
-            }
-        }
-
-        // Combine selected discount with manual discount if cashier entered one
-        $manualDiscount = min($unitPrice, max(0, (float)($item['manual_discount'] ?? 0)));
-        if ($manualDiscount > $discount) {
-            $discount = $manualDiscount;
-        }
-
+        $discount = min($unitPrice, (float)($item['manual_discount'] ?? 0));  // Simplified
         $itemTotal = $quantity * ($unitPrice - $discount);
         $total += $itemTotal;
 

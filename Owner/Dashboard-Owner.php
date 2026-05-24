@@ -1,9 +1,10 @@
 <?php
 require_once __DIR__ . "/../includes/auth.php";
-require_once __DIR__ . '/../includes/app.php';
 require_roles(['Owner'], '../Login.php');
+require_once __DIR__ . "/../includes/app.php";
 
-$conn = new mysqli("localhost", "root", "", "db_agrivet", 3307);
+
+$conn = new mysqli("localhost", "root", "", "agrivet_db");
 if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
@@ -63,19 +64,19 @@ if ($salesRes && $salesRes->num_rows > 0) {
     <link rel="stylesheet" href="../style.css">
 </head>
 <body>
-    <?php render_sidebar('Owner', 'Dashboard-Owner.php', 'Owner'); ?>
+    <?php render_sidebar('Owner','Dashboard-Owner','Owner'); ?>
 <!-- <div class="sidebar">
     <button class="menu-toggle" onclick="toggleSidebar()">&#9776;</button>
     <h2 class="title">Agrivet Owner</h2>
     <img src="../assets/logo.png" alt="Logo" class="logo">
-     <ul>
+    <ul>
         <li class="active"><a href="Dashboard-Owner.php">Dashboard</a></li>
         <li><a href="Inventory.php">Inventory</a></li>
         <li><a href="HR-Summary.php">HR Summary</a></li>
-        <li><a href="Sales-ReportOwner.php">Sales Report</a></li>
+        <li><a href="../Sales-Report.php">Sales Report</a></li>
         <li><a href="../logout.php">Logout</a></li>
-    </ul> -->
-</div>
+    </ul>
+</div> -->
 
 <div class="userAdmin">
     <div class="page-header">
