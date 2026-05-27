@@ -1,13 +1,9 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 
-$conn = new mysqli("localhost", "root", "", "agrivet_db");
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
+$conn = app_connect();
 
-// Create suppliers table if not exists
 $conn->query("CREATE TABLE IF NOT EXISTS product_suppliers (
     id INT AUTO_INCREMENT PRIMARY KEY,
     supplier_name VARCHAR(150) NOT NULL UNIQUE,
@@ -18,48 +14,82 @@ $conn->query("CREATE TABLE IF NOT EXISTS product_suppliers (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )");
 
-// Handle supplier editing
-if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['edit_supplier'])) {
-    $supplier_id = (int)$_POST['supplier_id'];
-    $supplier_name = trim($_POST['supplier_name']);
-    $contact_number = trim($_POST['contact_number']);
-    $contact_email = trim($_POST['contact_email']);
-    $supplier_description = trim($_POST['supplier_description']);
+function is_valid_contact_number($value) {
+    return $value === '' || preg_match('/^[0-9\+\-\s]+$/', $value);
+}
 
-    if (!empty($supplier_name)) {
-        $stmt = $conn->prepare("UPDATE product_suppliers SET supplier_name = ?, contact_number = ?, contact_email = ?, supplier_description = ? WHERE id = ?");
-        $stmt->bind_param("ssssi", $supplier_name, $contact_number, $contact_email, $supplier_description, $supplier_id);
-        if ($stmt->execute()) {
-            $success_message = "Supplier updated successfully!";
-        } else {
-            $error_message = "Error updating supplier: " . $stmt->error;
-        }
-        $stmt->close();
+$editing_supplier = null;
+$error_message = '';
+$success_message = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $supplier_id = (int)($_POST['supplier_id'] ?? 0);
+    $action = $_POST['supplier_action'] ?? 'add';
+    $name = trim($_POST['supplier_name'] ?? '');
+    $number = trim($_POST['contact_number'] ?? '');
+    $email = trim($_POST['contact_email'] ?? '');
+    $description = trim($_POST['supplier_description'] ?? '');
+    if (strtoupper($email) === 'N/A') {
+        $email = null;
+    }
+
+    if ($name === '') {
+        $error_message = 'Supplier name is required.';
+    } elseif (!is_valid_contact_number($number)) {
+        $error_message = 'Supplier contact number may only contain digits, spaces, +, and -.';
     } else {
-        $error_message = "Supplier name is required!";
+        if ($action === 'update' && $supplier_id > 0) {
+            $stmt = $conn->prepare("UPDATE product_suppliers SET supplier_name = ?, contact_number = ?, contact_email = ?, supplier_description = ?, is_active = 1 WHERE id = ?");
+            $stmt->bind_param('ssssi', $name, $number, $email, $description, $supplier_id);
+            if ($stmt->execute()) {
+                $success_message = 'Supplier updated successfully.';
+                header('Location: Suppliers.php'); exit;
+            } else {
+                $error_message = 'Error updating supplier: ' . $stmt->error;
+            }
+            $stmt->close();
+        } else {
+            $stmt = $conn->prepare("INSERT INTO product_suppliers (supplier_name, contact_number, contact_email, supplier_description) VALUES (?, ?, ?, ?)");
+            $stmt->bind_param('ssss', $name, $number, $email, $description);
+            if ($stmt->execute()) {
+                $success_message = 'Supplier added successfully.';
+                header('Location: Suppliers.php'); exit;
+            } else {
+                $error_message = 'Error adding supplier: ' . $stmt->error;
+            }
+            $stmt->close();
+        }
     }
 }
 
-// Handle status toggle
-if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['toggle_status'])) {
-    $supplier_id = (int)$_POST['supplier_id'];
-
-    $stmt = $conn->prepare("SELECT is_active FROM product_suppliers WHERE id = ?");
-    $stmt->bind_param("i", $supplier_id);
-    $stmt->execute();
-    $result_toggle = $stmt->get_result();
-    $row_toggle = $result_toggle->fetch_assoc();
-    $current_status = (int)($row_toggle['is_active'] ?? 1);
-    $new_status = ($current_status === 1) ? 0 : 1;
-
-    $stmt = $conn->prepare("UPDATE product_suppliers SET is_active = ? WHERE id = ?");
-    $stmt->bind_param("ii", $new_status, $supplier_id);
-    if ($stmt->execute()) {
-        $success_message = "Supplier status updated successfully!";
-    } else {
-        $error_message = "Error updating status: " . $stmt->error;
+if (isset($_GET['id'])) {
+    $id = (int)$_GET['id'];
+    if ($id > 0) {
+        $stmt = $conn->prepare('SELECT id, supplier_name, contact_number, contact_email, supplier_description, is_active FROM product_suppliers WHERE id = ?');
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $editing_supplier = $result->fetch_assoc();
+        $stmt->close();
     }
-    $stmt->close();
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_status'])) {
+    $supplier_id = (int)($_POST['supplier_id'] ?? 0);
+    if ($supplier_id > 0) {
+        $stmt = $conn->prepare('SELECT is_active FROM product_suppliers WHERE id = ?');
+        $stmt->bind_param('i', $supplier_id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $row = $result->fetch_assoc();
+        $stmt->close();
+        $new_status = (isset($row['is_active']) && (int)$row['is_active'] === 1) ? 0 : 1;
+        $stmt = $conn->prepare('UPDATE product_suppliers SET is_active = ? WHERE id = ?');
+        $stmt->bind_param('ii', $new_status, $supplier_id);
+        $stmt->execute();
+        $stmt->close();
+        header('Location: Suppliers.php'); exit;
+    }
 }
 
 $supplierSql = "SELECT ps.id,
@@ -83,7 +113,6 @@ $totalsSql = "SELECT COUNT(*) AS supplier_count,
 $totals = $conn->query($totalsSql);
 $summary = $totals ? $totals->fetch_assoc() : ['supplier_count' => 0, 'active_count' => 0];
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -95,14 +124,13 @@ $summary = $totals ? $totals->fetch_assoc() : ['supplier_count' => 0, 'active_co
 <body>
 <?php render_sidebar('admin', 'Suppliers.php', 'Admin'); ?>
 
-
 <div class="userAdmin">
     <div class="page-header">
         <div>
             <h1>Suppliers</h1>
-            <p>Monitor suppliers, stock concentration, and estimated inventory value.</p>
+            <p>Add, edit, archive, or restore suppliers used in the system.</p>
         </div>
-        <span class="chip">Supplier Overview</span>
+        <span class="chip">Supplier Management</span>
     </div>
 
     <div class="stats-grid">
@@ -123,51 +151,60 @@ $summary = $totals ? $totals->fetch_assoc() : ['supplier_count' => 0, 'active_co
         <div class="alert-error"><?php echo htmlspecialchars($error_message); ?></div>
     <?php endif; ?>
 
-    <div class="user-table-wrapper">
+    <div class="form-container">
+        <h2><?php echo $editing_supplier ? 'Edit Supplier' : 'Create Supplier'; ?></h2>
+        <form method="post" action="Suppliers.php<?php echo $editing_supplier ? '?id=' . (int)$editing_supplier['id'] : ''; ?>">
+            <input type="hidden" name="supplier_id" value="<?php echo htmlspecialchars($editing_supplier['id'] ?? ''); ?>">
+            <input type="hidden" name="supplier_action" value="<?php echo $editing_supplier ? 'update' : 'add'; ?>">
+            <label>Supplier Name <span style="color:red">*</span></label>
+            <input type="text" name="supplier_name" required value="<?php echo htmlspecialchars($editing_supplier['supplier_name'] ?? ''); ?>">
+            <label>Contact Number</label>
+            <input type="text" name="contact_number" placeholder="e.g. +63 912 345 6789" pattern="[0-9+\-\s]+" value="<?php echo htmlspecialchars($editing_supplier['contact_number'] ?? ''); ?>">
+            <label>Email or N/A</label>
+            <input type="text" name="contact_email" placeholder="Email or N/A" value="<?php echo htmlspecialchars($editing_supplier['contact_email'] ?? ''); ?>">
+            <label>Description</label>
+            <input type="text" name="supplier_description" value="<?php echo htmlspecialchars($editing_supplier['supplier_description'] ?? ''); ?>">
+            <div class="form-actions">
+                <?php if ($editing_supplier): ?>
+                    <a href="Suppliers.php" class="btn btn-secondary">Cancel</a>
+                <?php endif; ?>
+                <button type="submit" class="btn btn-primary" name="add_supplier"><?php echo $editing_supplier ? 'Update Supplier' : 'Save Supplier'; ?></button>
+            </div>
+        </form>
+    </div>
+
+    <div class="user-table-wrapper" style="margin-top:18px;">
         <table class="userTable">
             <thead>
                 <tr>
-                    <th>Supplier Name</th>
-                    <th>Contact Number</th>
+                    <th>Name</th>
+                    <th>Contact</th>
                     <th>Email</th>
-                    <th>Products</th>
-                    <th>Total Stock</th>
-                    <th>Estimated Value</th>
+                    <th>Description</th>
                     <th>Status</th>
-                    <th>Actions</th>
+                    <th>Action</th>
                 </tr>
             </thead>
             <tbody>
             <?php if ($suppliers && $suppliers->num_rows > 0): ?>
                 <?php while ($row = $suppliers->fetch_assoc()): ?>
-                <tr>
-                    <td><?php echo htmlspecialchars($row['supplier_name']); ?></td>
-                    <td><?php echo htmlspecialchars($row['contact_number'] ?? 'N/A'); ?></td>
-                    <td><?php echo htmlspecialchars($row['contact_email'] ?? 'N/A'); ?></td>
-                    <td><?php echo number_format((int)$row['total_products']); ?></td>
-                    <td><?php echo number_format((int)$row['total_stock']); ?></td>
-                    <td>PHP <?php echo number_format((float)$row['estimated_value'], 2); ?></td>
-                    <td><?php echo ($row['is_active'] == 1) ? 'Active' : 'Inactive'; ?></td>
-                    <td>
-                        <button type="button" onclick='editSupplier(
-                            <?php echo json_encode($row["id"]); ?>,
-                            <?php echo json_encode($row["supplier_name"]); ?>,
-                            <?php echo json_encode($row["contact_number"]); ?>,
-                            <?php echo json_encode($row["contact_email"]); ?>,
-                            <?php echo json_encode($row["supplier_description"]); ?>
-                        )'>Edit</button>
-
-                        <form method="post" action="" style="display:inline;">
-                            <input type="hidden" name="supplier_id" value="<?php echo $row['id']; ?>">
-                            <button type="submit" name="toggle_status">
-                                <?php echo ($row['is_active'] == 1) ? 'Archive' : 'Restore'; ?>
-                            </button>
-                        </form>
-                    </td>
-                </tr>
+                    <tr>
+                        <td><?php echo htmlspecialchars($row['supplier_name']); ?></td>
+                        <td><?php echo htmlspecialchars($row['contact_number'] ?: 'N/A'); ?></td>
+                        <td><?php echo htmlspecialchars($row['contact_email'] ?: 'N/A'); ?></td>
+                        <td><?php echo htmlspecialchars($row['supplier_description'] ?: '-'); ?></td>
+                        <td><?php echo $row['is_active'] ? 'Active' : 'Inactive'; ?></td>
+                        <td>
+                            <a class="btn btn-secondary" href="Suppliers.php?id=<?php echo $row['id']; ?>">Edit</a>
+                            <form method="post" action="Suppliers.php" style="display:inline;">
+                                <input type="hidden" name="supplier_id" value="<?php echo $row['id']; ?>">
+                                <button class="btn btn-secondary" type="submit" name="toggle_status"><?php echo $row['is_active'] ? 'Archive' : 'Restore'; ?></button>
+                            </form>
+                        </td>
+                    </tr>
                 <?php endwhile; ?>
             <?php else: ?>
-                <tr><td colspan="8">No supplier data found.</td></tr>
+                <tr><td colspan="6">No suppliers found.</td></tr>
             <?php endif; ?>
             </tbody>
         </table>
@@ -175,59 +212,6 @@ $summary = $totals ? $totals->fetch_assoc() : ['supplier_count' => 0, 'active_co
 </div>
 
 <script src="../script.js"></script>
-<script>
-function editSupplier(id, name, phone, email, description) {
-    document.getElementById('edit_supplier_id').value = id;
-    document.getElementById('edit_supplier_name').value = name;
-    document.getElementById('edit_contact_number').value = phone;
-    document.getElementById('edit_contact_email').value = email;
-    document.getElementById('edit_supplier_description').value = description;
-    document.getElementById('editPopup').style.display = 'block';
-}
-
-function closeEditPopup() {
-    document.getElementById('editPopup').style.display = 'none';
-}
-
-window.onclick = function(event) {
-    const popup = document.getElementById('editPopup');
-    if (event.target == popup) {
-        popup.style.display = 'none';
-    }
-}
-</script>
-
-<!-- EDIT SUPPLIER POPUP -->
-<div id="editPopup" class="popup-overlay" style="display:none;">
-    <div class="popup-content">
-        <div class="popup-header">
-            <h2>Edit Supplier</h2>
-            <span class="close-btn" onclick="closeEditPopup()">&times;</span>
-        </div>
-        <form method="post" action="">
-            <input type="hidden" id="edit_supplier_id" name="supplier_id">
-            <input type="hidden" name="edit_supplier" value="1">
-            
-            <label for="edit_supplier_name">Supplier Name: <span style="color:red">*</span></label>
-            <input type="text" id="edit_supplier_name" name="supplier_name" required>
-            
-            <label for="edit_contact_number">Contact Number:</label>
-            <input type="text" id="edit_contact_number" name="contact_number">
-            
-            <label for="edit_contact_email">Email:</label>
-            <input type="email" id="edit_contact_email" name="contact_email">
-            
-            <label for="edit_supplier_description">Description:</label>
-            <textarea id="edit_supplier_description" name="supplier_description" rows="3"></textarea>
-            
-            <div class="form-actions">
-                <button type="submit" class="btn-primary">Save Changes</button>
-                <button type="button" class="btn-secondary" onclick="closeEditPopup()">Cancel</button>
-            </div>
-        </form>
-    </div>
-</div>
 </body>
 </html>
-
 <?php $conn->close(); ?>

@@ -138,12 +138,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_product'])) {
 
 // Handle product editing
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['edit_product'])) {
-    $product_id     = (int)$_POST['product_id'];
-    $product_name   = trim($_POST['product_name']);
-    $product_unit   = isset($_POST['product_unit']) ? $_POST['product_unit'] : 'pcs';
-    $price          = isset($_POST['price']) ? (float)$_POST['price'] : 0;
-    $stock_quantity = isset($_POST['stock_quantity']) ? trim($_POST['stock_quantity']) : 0;
-    $expiration_date = !empty($_POST['expiration_date']) ? $_POST['expiration_date'] : NULL;
+    $product_id   = (int)$_POST['product_id'];
+    $product_name = trim($_POST['product_name']);
 
     // Check if product name already exists (excluding current product)
     $checkStmt = $conn->prepare("SELECT id FROM inventory WHERE LOWER(product_name) = LOWER(?) AND id != ?");
@@ -176,8 +172,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['edit_product'])) {
               && !empty($supplier);
 
         if ($valid) {
-            $stmt = $conn->prepare("UPDATE inventory SET product_name = ?, stock_quantity = ?, category = ?, supplier = ?, product_unit = ?, price = ?, expiration_date = ? WHERE id = ?");
-            $stmt->bind_param("sssssdsi", $product_name, $stock_quantity, $category, $supplier, $product_unit, $price, $expiration_date, $product_id);
+            $stmt = $conn->prepare("UPDATE inventory SET product_name = ?, category = ?, supplier = ? WHERE id = ?");
+            $stmt->bind_param("sssi", $product_name, $category, $supplier, $product_id);
             if ($stmt->execute()) {
                 $success_message = "Product updated successfully!";
             } else {
@@ -577,12 +573,8 @@ if (isset($error_message)):
                     <button type="button" class="primary-button" onclick='editProduct(
                         <?php echo json_encode($row["id"]); ?>,
                         <?php echo json_encode($row["product_name"]); ?>,
-                        <?php echo json_encode($row["stock_quantity"]); ?>,
                         <?php echo json_encode($row["category"]); ?>,
-                        <?php echo json_encode($row["supplier"]); ?>,
-                        <?php echo json_encode($row["product_unit"]); ?>,
-                        <?php echo json_encode($row["price"]); ?>,
-                        <?php echo json_encode($row["expiration_date"]); ?>
+                        <?php echo json_encode($row["supplier"]); ?>
                     )'>Edit</button>
 
                     <form method="post" action="" style="display:inline;">
@@ -636,7 +628,7 @@ if (isset($error_message)):
                     <div class="form-field">
                         <label for="product_name">Product name <span class="req">*</span></label>
                         <input type="text" id="product_name" name="product_name"
-                               placeholder="e.g. Amoxicillin 500mg" oninput="calcAddProgress()">
+                               placeholder="Input Product Name" oninput="calcAddProgress()">
                         <div class="field-error" id="err_add_product_name">Product name is required.</div>
                     </div>
                 </div>
@@ -734,7 +726,7 @@ if (isset($error_message)):
                             <?php foreach ($categoryOptions as $option): ?>
                                 <option value="<?php echo htmlspecialchars($option); ?>"><?php echo htmlspecialchars($option); ?></option>
                             <?php endforeach; ?>
-                            <option value="__others__">— Others (add new) —</option>
+                            <!-- <option value="__others__">— Others (add new) —</option> -->
                         </select>
                         <div class="others-input" id="edit_cat_others">
                             <input type="text" name="new_category" id="edit_new_category" placeholder="Type new category…" oninput="calcEditProgress()">
@@ -749,45 +741,13 @@ if (isset($error_message)):
                             <?php foreach ($supplierOptions as $option): ?>
                                 <option value="<?php echo htmlspecialchars($option); ?>"><?php echo htmlspecialchars($option); ?></option>
                             <?php endforeach; ?>
-                            <option value="__others__">— Others (add new) —</option>
+                            <!-- <option value="__others__">— Others (add new) —</option> -->
                         </select>
                         <div class="others-input" id="edit_sup_others">
                             <input type="text" name="new_supplier" id="edit_new_supplier" placeholder="Type new supplier…" oninput="calcEditProgress()">
                             <div class="others-hint">&#9733; Will be saved as a new supplier</div>
                         </div>
                         <div class="field-error" id="err_edit_supplier">Supplier is required.</div>
-                    </div>
-                </div>
-
-                <div class="form-section-label" style="margin-top:4px">Stock &amp; pricing</div>
-
-                <div class="form-row cols-2">
-                    <div class="form-field">
-                        <label for="edit_price">Price (&#8369;) <span class="req">*</span></label>
-                        <input type="number" id="edit_price" name="price" step="0.01" min="0" placeholder="0.00" oninput="calcEditProgress()">
-                        <div class="field-error" id="err_edit_price">Valid price required (&#8805; 0).</div>
-                    </div>
-                    <div class="form-field">
-                        <label for="edit_stock_quantity">Quantity <span class="req">*</span></label>
-                        <input type="number" id="edit_stock_quantity" name="stock_quantity" step="0.01" min="0" placeholder="0" oninput="calcEditProgress()">
-                        <div class="field-error" id="err_edit_stock_quantity">Valid quantity required (&#8805; 0).</div>
-                    </div>
-                </div>
-
-                <div class="form-row cols-2">
-                    <div class="form-field">
-                        <label for="edit_product_unit">Unit <span class="req">*</span></label>
-                        <select id="edit_product_unit" name="product_unit" onchange="calcEditProgress()">
-                            <option value="pcs">pcs — pieces</option>
-                            <option value="kls">kg — kilograms</option>
-                            <option value="sack">sack</option>
-                            <option value="ml">ml — milliliter</option>
-                            <option value="bottle">bottle</option>
-                        </select>
-                    </div>
-                    <div class="form-field">
-                        <label for="edit_expiration_date">Expiration date</label>
-                        <input type="date" id="edit_expiration_date" name="expiration_date" oninput="calcEditProgress()">
                     </div>
                 </div>
 
@@ -875,8 +835,6 @@ function calcEditProgress() {
         (document.getElementById('edit_product_name')?.value || '').trim(),
         document.getElementById('edit_category')?.value,
         document.getElementById('edit_supplier')?.value,
-        document.getElementById('edit_price')?.value,
-        document.getElementById('edit_stock_quantity')?.value,
     ];
     const filled = vals.filter(v => v && v !== '' && v !== '__others__').length;
     const pct = filled / vals.length;
@@ -920,16 +878,12 @@ function ensureSelectValue(selectId, value) {
     select.value = value || '';
 }
 
-function editProduct(id, name, quantity, category, supplier, unit, price, expiration) {
+function editProduct(id, name, category, supplier) {
     clearErrors('edit');
-    document.getElementById('edit_product_id').value       = id;
-    document.getElementById('edit_product_name').value     = name;
-    document.getElementById('edit_stock_quantity').value   = quantity;
+    document.getElementById('edit_product_id').value   = id;
+    document.getElementById('edit_product_name').value = name;
     ensureSelectValue('edit_category', category);
     ensureSelectValue('edit_supplier', supplier);
-    document.getElementById('edit_product_unit').value     = unit;
-    document.getElementById('edit_price').value            = price;
-    document.getElementById('edit_expiration_date').value  = expiration ?? '';
     // Make sure others panels are hidden
     ['edit_cat_others','edit_sup_others'].forEach(id => {
         const el = document.getElementById(id);
@@ -983,22 +937,6 @@ function validateProductForm(prefix) {
         if (!newSup) { showError(`err_${prefix}_supplier`); errors.push('Please enter a new supplier name.'); }
     }
 
-    // Only validate price and quantity for edit form (not for add form)
-    if (prefix === 'edit') {
-        // Price
-        const priceEl = document.getElementById(p + 'price');
-        const priceVal = priceEl?.value;
-        if (priceVal === '' || priceVal === null || isNaN(parseFloat(priceVal)) || parseFloat(priceVal) < 0) {
-            showError(`err_${prefix}_price`); errors.push('Price is required and must be 0 or more.');
-        }
-
-        // Stock quantity
-        const qtyEl = document.getElementById(p + 'stock_quantity');
-        const qtyVal = qtyEl?.value;
-        if (qtyVal === '' || qtyVal === null || isNaN(parseFloat(qtyVal)) || parseFloat(qtyVal) < 0) {
-            showError(`err_${prefix}_stock_quantity`); errors.push('Quantity is required and must be 0 or more.');
-        }
-    }
 
     if (errors.length > 0) {
         const summary = document.getElementById(prefix + 'ValidationSummary');

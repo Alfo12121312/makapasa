@@ -4,61 +4,7 @@ require_roles(['Admin'], '../Login.php');
 
 $conn = app_connect();
 
-// Master data tables used by Manage Product dropdowns.
-$conn->query("CREATE TABLE IF NOT EXISTS product_categories (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    category_name VARCHAR(120) NOT NULL UNIQUE,
-    category_description VARCHAR(255) NULL,
-    is_active TINYINT(1) NOT NULL DEFAULT 1,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)");
-
-$conn->query("CREATE TABLE IF NOT EXISTS product_suppliers (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    supplier_name VARCHAR(150) NOT NULL UNIQUE,
-    contact_number VARCHAR(60) NULL,
-    contact_email VARCHAR(150) NULL,
-    supplier_description VARCHAR(255) NULL,
-    is_active TINYINT(1) NOT NULL DEFAULT 1,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)");
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_category'])) {
-    $name = trim($_POST['category_name'] ?? '');
-    $description = trim($_POST['category_description'] ?? '');
-    if ($name !== '') {
-        $stmt = $conn->prepare("INSERT INTO product_categories (category_name, category_description)
-                                VALUES (?, ?)
-                                ON DUPLICATE KEY UPDATE
-                                    category_description = VALUES(category_description),
-                                    is_active = 1");
-        $stmt->bind_param("ss", $name, $description);
-        $stmt->execute();
-        $stmt->close();
-    }
-}
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_supplier'])) {
-    $name = trim($_POST['supplier_name'] ?? '');
-    $number = trim($_POST['contact_number'] ?? '');
-    $email = trim($_POST['contact_email'] ?? '');// Treat empty or "N/A" email as null to avoid storing invalid emails.
-    if (strtoupper($email) === 'N/A') {
-        $email = null;}
-
-    $description = trim($_POST['supplier_description'] ?? '');
-    if ($name !== '') {
-        $stmt = $conn->prepare("INSERT INTO product_suppliers (supplier_name, contact_number, contact_email, supplier_description)
-                                VALUES (?, ?, ?, ?)
-                                ON DUPLICATE KEY UPDATE
-                                    contact_number = VALUES(contact_number),
-                                    contact_email = VALUES(contact_email),
-                                    supplier_description = VALUES(supplier_description),
-                                    is_active = 1");
-        $stmt->bind_param("ssss", $name, $number, $email, $description);
-        $stmt->execute();
-        $stmt->close();
-    }
-}
+// Supplier and category management moved to separate pages: Suppliers.php and Categories.php
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
     $settings = [
@@ -76,12 +22,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
     }
 }
 
-$categories = $conn->query("SELECT id, category_name, category_description, is_active
-                            FROM product_categories
-                            ORDER BY category_name ASC");
-$suppliers = $conn->query("SELECT id, supplier_name, contact_number, contact_email, supplier_description, is_active
-                           FROM product_suppliers
-                           ORDER BY supplier_name ASC");
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -90,6 +30,23 @@ $suppliers = $conn->query("SELECT id, supplier_name, contact_number, contact_ema
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>System Settings</title>
     <link rel="stylesheet" href="../style.css">
+    <style>
+        .settings-grid {
+            grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+            gap: 20px;
+        }
+        .settings-grid .form-container {
+            min-width: 420px;
+        }
+        .userTable th.actions,
+        .userTable td.actions {
+            width: 110px;
+            text-align: center;
+        }
+        .userTable td.actions button {
+            min-width: 90px;
+        }
+    </style>
 </head>
 <body>
 <?php render_sidebar('admin', 'System-Settings.php', 'Admin'); ?>
@@ -112,59 +69,18 @@ $suppliers = $conn->query("SELECT id, supplier_name, contact_number, contact_ema
     <div class="settings-grid">
         <div class="form-container">
             <h2>Supplier Master List</h2>
-            <p>Add or update suppliers used in product dropdowns.</p>
-            <form method="post">
-                <input type="text" name="supplier_name" placeholder="Supplier Name" required>
-                <input type="text" name="contact_number" placeholder="Contact Number">
-                <input type="text" name="contact_email" placeholder="Email or N/A"> <!--Allow "N/A" for suppliers without an email, but store as NULL in the database to avoid invalid emails. -->
-                <input type="text" name="supplier_description" placeholder="Optional Description">
-                <button type="submit" name="add_supplier">Save Supplier</button>
-            </form>
-            <div class="user-table-wrapper">
-                <table class="userTable">
-                    <thead><tr><th>Name</th><th>Number</th><th>Email</th><th>Description</th></tr></thead>
-                    <tbody>
-                    <?php if ($suppliers && $suppliers->num_rows > 0): while ($row = $suppliers->fetch_assoc()): ?>
-                        <tr>
-                            <td><?php echo htmlspecialchars($row['supplier_name']); ?></td>
-                            <td><?php echo htmlspecialchars($row['contact_number'] ?: '-'); ?></td>
-                            <td><?php echo htmlspecialchars($row['contact_email'] ?: '-'); ?></td>
-                            <td><?php echo htmlspecialchars($row['supplier_description'] ?: '-'); ?></td>
-                        </tr>
-                    <?php endwhile; else: ?>
-                        <tr><td colspan="4">No suppliers configured.</td></tr>
-                    <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
+            <p>Manage suppliers on the dedicated Suppliers page.</p>
+            <a class="action-btn" href="Suppliers.php">Open Supplier Page</a>
         </div>
-
         <div class="form-container">
             <h2>Category Master List</h2>
-            <p>Add or update categories used in product dropdowns.</p>
-            <form method="post">
-                <input type="text" name="category_name" placeholder="Category Name" required>
-                <input type="text" name="category_description" placeholder="Optional Description">
-                <button type="submit" name="add_category">Save Category</button>
-            </form>
-            <div class="user-table-wrapper">
-                <table class="userTable">
-                    <thead><tr><th>Category</th><th>Description</th></tr></thead>
-                    <tbody>
-                    <?php if ($categories && $categories->num_rows > 0): while ($row = $categories->fetch_assoc()): ?>
-                        <tr>
-                            <td><?php echo htmlspecialchars($row['category_name']); ?></td>
-                            <td><?php echo htmlspecialchars($row['category_description'] ?: '-'); ?></td>
-                        </tr>
-                    <?php endwhile; else: ?>
-                        <tr><td colspan="2">No categories configured.</td></tr>
-                    <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
+            <p>Manage categories on the dedicated Categories page.</p>
+            <a class="action-btn" href="Categories.php">Open Category Page</a>
         </div>
     </div>
+
 </div>
+
 <script src="../script.js"></script>
 </body>
 </html>
