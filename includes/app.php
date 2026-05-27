@@ -187,6 +187,16 @@ function ensure_core_schema($conn) {
         $conn->query("ALTER TABLE discount_rules ADD COLUMN cashier_selectable TINYINT(1) NOT NULL DEFAULT 0");
     }
 
+    $inventoryCostPrice = $conn->query("SHOW COLUMNS FROM inventory LIKE 'cost_price'");
+    if ($inventoryCostPrice && $inventoryCostPrice->num_rows === 0) {
+        $conn->query("ALTER TABLE inventory ADD COLUMN cost_price DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER price");
+    }
+
+    $stockMovementsCostPrice = $conn->query("SHOW COLUMNS FROM stock_movements LIKE 'cost_price'");
+    if ($stockMovementsCostPrice && $stockMovementsCostPrice->num_rows === 0) {
+        $conn->query("ALTER TABLE stock_movements ADD COLUMN cost_price DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER quantity");
+    }
+
     $settings = [
         'cashier_can_apply_discounts' => '0',
         'cashier_can_manage_layaway_payments' => '1'

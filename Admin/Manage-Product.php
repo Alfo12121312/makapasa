@@ -2,6 +2,11 @@
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 
+// Start session for success messages across redirects
+if (!isset($_SESSION)) {
+    session_start();
+}
+
 $conn = new mysqli("localhost", "root", "", "agrivet_db");
 if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
@@ -24,6 +29,36 @@ $conn->query("CREATE TABLE IF NOT EXISTS product_suppliers (
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )");
+
+// Ensure inventory table has status column (ENUM with correct values)
+$result = $conn->query("SHOW COLUMNS FROM inventory LIKE 'status'");
+if ($result->num_rows == 0) {
+    // Column doesn't exist - create it
+    $conn->query("ALTER TABLE inventory ADD COLUMN status ENUM('Active','Inactive') DEFAULT 'Active' AFTER price");
+} else {
+    // Column exists - verify it has the correct enum values
+    $col = $result->fetch_assoc();
+    // If it has 'Hidden' instead of 'Inactive', modify it
+    if (strpos($col['Type'], 'Hidden') !== false) {
+        $conn->query("ALTER TABLE inventory MODIFY COLUMN status ENUM('Active','Inactive') DEFAULT 'Active'");
+        // Update any 'Hidden' values to 'Inactive'
+        $conn->query("UPDATE inventory SET status = 'Inactive' WHERE status = 'Hidden' OR status = ''");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DEBUGGING MODE - Remove comment to enable
+// Set to true to see debug information
+// ═══════════════════════════════════════════════════════════════
+$DEBUG_MODE = false;
+$debug_log = [];
+
+function debug_add($msg) {
+    global $debug_log, $DEBUG_MODE;
+    if ($DEBUG_MODE) {
+        $debug_log[] = $msg;
+    }
+}
 
 // Helper: save new category if "others" was chosen
 function saveNewCategory($conn, $new_name) {
@@ -50,45 +85,54 @@ function saveNewSupplier($conn, $new_name) {
 // Handle product addition
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_product'])) {
     $product_name   = trim($_POST['product_name']);
-    $stock_quantity = trim($_POST['stock_quantity']);
-    $product_unit   = $_POST['product_unit'];
-    $price          = (float)$_POST['price'];
-    $expiration_date = !empty($_POST['expiration_date']) ? $_POST['expiration_date'] : NULL;
+    $stock_quantity = 0;
+    $product_unit   = 'pcs';
+    $price          = 0;
+    $expiration_date = NULL;
 
-    // Resolve category
-    if ($_POST['category'] === '__others__') {
-        $new_cat = trim($_POST['new_category'] ?? '');
-        $category = !empty($new_cat) ? saveNewCategory($conn, $new_cat) : '';
+    // Check if product name already exists
+    $checkStmt = $conn->prepare("SELECT id FROM inventory WHERE LOWER(product_name) = LOWER(?)");
+    $checkStmt->bind_param("s", $product_name);
+    $checkStmt->execute();
+    $checkResult = $checkStmt->get_result();
+    $checkStmt->close();
+
+    if ($checkResult->num_rows > 0) {
+        $error_message = "Error: Product already exists! Add new stock in <a href='Inventory.php' style='color:#e53e3e;text-decoration:underline;'>Inventory.php</a>";
     } else {
-        $category = trim($_POST['category']);
-    }
-
-    // Resolve supplier
-    if ($_POST['supplier'] === '__others__') {
-        $new_sup = trim($_POST['new_supplier'] ?? '');
-        $supplier = !empty($new_sup) ? saveNewSupplier($conn, $new_sup) : '';
-    } else {
-        $supplier = trim($_POST['supplier']);
-    }
-
-    $valid = !empty($product_name)
-          && is_numeric($stock_quantity) && $stock_quantity >= 0
-          && !empty($category)
-          && !empty($supplier)
-          && in_array($product_unit, ['pcs', 'kls', 'sack'])
-          && $price >= 0;
-
-    if ($valid) {
-        $stmt = $conn->prepare("INSERT INTO inventory (product_name, stock_quantity, category, supplier, product_unit, price, expiration_date) VALUES (?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("sssssds", $product_name, $stock_quantity, $category, $supplier, $product_unit, $price, $expiration_date);
-        if ($stmt->execute()) {
-            $success_message = "Product added successfully!";
+        // Resolve category
+        if ($_POST['category'] === '__others__') {
+            $new_cat = trim($_POST['new_category'] ?? '');
+            $category = !empty($new_cat) ? saveNewCategory($conn, $new_cat) : '';
         } else {
-            $error_message = "Error: " . $stmt->error;
+            $category = trim($_POST['category']);
         }
-        $stmt->close();
-    } else {
-        $error_message = "All fields are required, category/supplier cannot be empty, and price must be non-negative!";
+
+        // Resolve supplier
+        if ($_POST['supplier'] === '__others__') {
+            $new_sup = trim($_POST['new_supplier'] ?? '');
+            $supplier = !empty($new_sup) ? saveNewSupplier($conn, $new_sup) : '';
+        } else {
+            $supplier = trim($_POST['supplier']);
+        }
+
+        $valid = !empty($product_name)
+              && !empty($category)
+              && !empty($supplier);
+
+        if ($valid) {
+            $stmt = $conn->prepare("INSERT INTO inventory (product_name, stock_quantity, category, supplier, product_unit, price, expiration_date, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $status = 'Active';
+            $stmt->bind_param("sssssdss", $product_name, $stock_quantity, $category, $supplier, $product_unit, $price, $expiration_date, $status);
+            if ($stmt->execute()) {
+                $success_message = "Product added successfully!";
+            } else {
+                $error_message = "Error: " . $stmt->error;
+            }
+            $stmt->close();
+        } else {
+            $error_message = "Product name, category, and supplier are required!";
+        }
     }
 }
 
@@ -96,65 +140,115 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_product'])) {
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['edit_product'])) {
     $product_id     = (int)$_POST['product_id'];
     $product_name   = trim($_POST['product_name']);
-    $stock_quantity = trim($_POST['stock_quantity']);
-    $product_unit   = $_POST['product_unit'];
-    $price          = (float)$_POST['price'];
+    $product_unit   = isset($_POST['product_unit']) ? $_POST['product_unit'] : 'pcs';
+    $price          = isset($_POST['price']) ? (float)$_POST['price'] : 0;
+    $stock_quantity = isset($_POST['stock_quantity']) ? trim($_POST['stock_quantity']) : 0;
     $expiration_date = !empty($_POST['expiration_date']) ? $_POST['expiration_date'] : NULL;
 
-    // Resolve category
-    if ($_POST['category'] === '__others__') {
-        $new_cat = trim($_POST['new_category'] ?? '');
-        $category = !empty($new_cat) ? saveNewCategory($conn, $new_cat) : '';
+    // Check if product name already exists (excluding current product)
+    $checkStmt = $conn->prepare("SELECT id FROM inventory WHERE LOWER(product_name) = LOWER(?) AND id != ?");
+    $checkStmt->bind_param("si", $product_name, $product_id);
+    $checkStmt->execute();
+    $checkResult = $checkStmt->get_result();
+    $checkStmt->close();
+
+    if ($checkResult->num_rows > 0) {
+        $error_message = "Error: Product already exists! Add new stock in <a href='Inventory.php' style='color:#e53e3e;text-decoration:underline;'>Inventory.php</a>";
     } else {
-        $category = trim($_POST['category']);
-    }
-
-    // Resolve supplier
-    if ($_POST['supplier'] === '__others__') {
-        $new_sup = trim($_POST['new_supplier'] ?? '');
-        $supplier = !empty($new_sup) ? saveNewSupplier($conn, $new_sup) : '';
-    } else {
-        $supplier = trim($_POST['supplier']);
-    }
-
-    $valid = !empty($product_name)
-          && is_numeric($stock_quantity) && $stock_quantity >= 0
-          && !empty($category)
-          && !empty($supplier)
-          && in_array($product_unit, ['pcs', 'kls', 'sack'])
-          && $price >= 0;
-
-    if ($valid) {
-        $stmt = $conn->prepare("UPDATE inventory SET product_name = ?, stock_quantity = ?, category = ?, supplier = ?, product_unit = ?, price = ?, expiration_date = ? WHERE id = ?");
-        $stmt->bind_param("sssssdsi", $product_name, $stock_quantity, $category, $supplier, $product_unit, $price, $expiration_date, $product_id);
-        if ($stmt->execute()) {
-            $success_message = "Product updated successfully!";
+        // Resolve category
+        if ($_POST['category'] === '__others__') {
+            $new_cat = trim($_POST['new_category'] ?? '');
+            $category = !empty($new_cat) ? saveNewCategory($conn, $new_cat) : '';
         } else {
-            $error_message = "Error updating product: " . $stmt->error;
+            $category = trim($_POST['category']);
         }
-        $stmt->close();
-    } else {
-        $error_message = "All fields are required, category/supplier cannot be empty, and price must be non-negative!";
+
+        // Resolve supplier
+        if ($_POST['supplier'] === '__others__') {
+            $new_sup = trim($_POST['new_supplier'] ?? '');
+            $supplier = !empty($new_sup) ? saveNewSupplier($conn, $new_sup) : '';
+        } else {
+            $supplier = trim($_POST['supplier']);
+        }
+
+        $valid = !empty($product_name)
+              && !empty($category)
+              && !empty($supplier);
+
+        if ($valid) {
+            $stmt = $conn->prepare("UPDATE inventory SET product_name = ?, stock_quantity = ?, category = ?, supplier = ?, product_unit = ?, price = ?, expiration_date = ? WHERE id = ?");
+            $stmt->bind_param("sssssdsi", $product_name, $stock_quantity, $category, $supplier, $product_unit, $price, $expiration_date, $product_id);
+            if ($stmt->execute()) {
+                $success_message = "Product updated successfully!";
+            } else {
+                $error_message = "Error updating product: " . $stmt->error;
+            }
+            $stmt->close();
+        } else {
+            $error_message = "Product name, category, and supplier are required!";
+        }
     }
 }
 
 // Handle status toggle
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['toggle_status'])) {
     $product_id = (int)$_POST['product_id'];
+    
+    debug_add("Toggle Status Request - Product ID: " . $product_id);
 
     $stmt = $conn->prepare("SELECT status FROM inventory WHERE id = ?");
     $stmt->bind_param("i", $product_id);
     $stmt->execute();
     $result_toggle = $stmt->get_result();
     $row_toggle = $result_toggle->fetch_assoc();
-    $current_status = !empty($row_toggle['status']) ? $row_toggle['status'] : 'Active';
+    $stmt->close();
+    
+    debug_add("Current Status from DB: " . json_encode($row_toggle));
+    
+    // Get current status - handle NULL, empty, and 'Hidden' values
+    $current_status = $row_toggle['status'] ?? null;
+    
+    // Normalize: treat NULL, empty, and 'Hidden' as 'Inactive'
+    if (empty($current_status) || $current_status === 'Hidden') {
+        $current_status = 'Inactive';
+    }
+    
+    // Ensure value is valid enum
+    if ($current_status !== 'Active' && $current_status !== 'Inactive') {
+        $current_status = 'Active'; // Default
+    }
+    
+    debug_add("Parsed Current Status: " . $current_status);
+    
+    // Toggle status
     $new_status = ($current_status === 'Active') ? 'Inactive' : 'Active';
+    
+    debug_add("New Status to Set: " . $new_status);
 
     $stmt = $conn->prepare("UPDATE inventory SET status = ? WHERE id = ?");
     $stmt->bind_param("si", $new_status, $product_id);
+    
     if ($stmt->execute()) {
-        $success_message = "Product status updated successfully!";
+        debug_add("Update Success - Rows Affected: " . $stmt->affected_rows);
+        
+        // Verify the update
+        $verify = $conn->prepare("SELECT id, product_name, status FROM inventory WHERE id = ?");
+        $verify->bind_param("i", $product_id);
+        $verify->execute();
+        $verify_result = $verify->get_result();
+        $verify_row = $verify_result->fetch_assoc();
+        $verify->close();
+        
+        debug_add("Verification After Update: " . json_encode($verify_row));
+        
+        // Store success message in session and redirect
+        $_SESSION['success_message'] = "Product status updated to " . $new_status . " successfully!";
+        $_SESSION['debug_info'] = implode(" | ", $debug_log);
+        
+        header("Location: " . $_SERVER['PHP_SELF']);
+        exit();
     } else {
+        debug_add("Update Failed: " . $stmt->error);
         $error_message = "Error updating status: " . $stmt->error;
     }
     $stmt->close();
@@ -393,10 +487,17 @@ if ($supplierResult) {
 <h1>Manage Products</h1>
 <p>Add, edit, and manage product details here.</p>
 
-<?php if (isset($success_message)): ?>
-    <div class="message success"><?php echo $success_message; ?></div>
-<?php endif; ?>
-<?php if (isset($error_message)): ?>
+<?php 
+// Check for session messages first, then regular variables
+if (isset($_SESSION['success_message'])) {
+    echo '<div class="message success">' . $_SESSION['success_message'] . '</div>';
+    unset($_SESSION['success_message']);
+} elseif (isset($success_message)) {
+    echo '<div class="message success">' . $success_message . '</div>';
+}
+
+if (isset($error_message)): 
+?>
     <div class="message error"><?php echo $error_message; ?></div>
 <?php endif; ?>
 
@@ -444,10 +545,10 @@ if ($supplierResult) {
                 <th>Product Name</th>
                 <th>Category</th>
                 <th>Supplier</th>
-                <th>Stock Quantity</th>
+                <!-- <th>Stock Quantity</th>
                 <th>Unit</th>
                 <th>Price</th>
-                <th>Expiration Date</th>
+                <th>Expiration Date</th> -->
                 <th>Status</th>
                 <th>Date Added</th>
                 <th>Actions</th>
@@ -459,14 +560,21 @@ if ($supplierResult) {
                 <td><?php echo htmlspecialchars($row['product_name']); ?></td>
                 <td><?php echo htmlspecialchars($row['category']); ?></td>
                 <td><?php echo htmlspecialchars($row['supplier']); ?></td>
-                <td><?php echo $row['stock_quantity']; ?></td>
+                <!-- <td><?php echo $row['stock_quantity']; ?></td>
                 <td><?php echo htmlspecialchars($row['product_unit']); ?></td>
                 <td><?php echo number_format($row['price'], 2); ?></td>
-                <td><?php echo $row['expiration_date'] ? $row['expiration_date'] : 'N/A'; ?></td>
-                <td><?php echo !empty($row['status']) ? $row['status'] : 'Active'; ?></td>
+                <td><?php echo $row['expiration_date'] ? $row['expiration_date'] : 'N/A'; ?></td> -->
+                <td><?php 
+                    // Normalize status for display: treat NULL, empty, or 'Hidden' as 'Inactive' initially
+                    $display_status = $row['status'];
+                    if (empty($display_status) || $display_status === 'Hidden') {
+                        $display_status = 'Inactive';
+                    }
+                    echo htmlspecialchars($display_status);
+                ?></td>
                 <td><?php echo $row['date_added']; ?></td>
                 <td>
-                    <button type="button" onclick='editProduct(
+                    <button type="button" class="primary-button" onclick='editProduct(
                         <?php echo json_encode($row["id"]); ?>,
                         <?php echo json_encode($row["product_name"]); ?>,
                         <?php echo json_encode($row["stock_quantity"]); ?>,
@@ -479,9 +587,18 @@ if ($supplierResult) {
 
                     <form method="post" action="" style="display:inline;">
                         <input type="hidden" name="product_id" value="<?php echo $row['id']; ?>">
-                        <input type="hidden" name="current_status" value="<?php echo !empty($row['status']) ? $row['status'] : 'Active'; ?>">
-                        <button type="submit" name="toggle_status">
-                            <?php echo (($row['status'] ?? 'Active') === 'Active') ? 'Archive' : 'Restore'; ?>
+                        <?php
+                            // Determine button state: treat NULL, empty, or 'Hidden' as 'Inactive'
+                            $btn_status = $row['status'];
+                            if (empty($btn_status) || $btn_status === 'Hidden') {
+                                $btn_status = 'Inactive';
+                            }
+                            $is_active = ($btn_status === 'Active');
+                            $btn_color = $is_active ? '#e53e3e' : '#27ae60';
+                            $btn_text = $is_active ? 'Archive' : 'Restore';
+                        ?>
+                        <button type="submit" name="toggle_status" class="primary-button" style="background: <?php echo $btn_color; ?>">
+                            <?php echo $btn_text; ?>
                         </button>
                     </form>
                 </td>
@@ -561,38 +678,6 @@ if ($supplierResult) {
                     </div>
                 </div>
 
-                <div class="form-section-label" style="margin-top:4px">Stock &amp; pricing</div>
-
-                <div class="form-row cols-2">
-                    <div class="form-field">
-                        <label for="price">Price (&#8369;) <span class="req">*</span></label>
-                        <input type="number" id="price" name="price"
-                               step="0.01" min="0" placeholder="0.00" oninput="calcAddProgress()">
-                        <div class="field-error" id="err_add_price">Valid price required (&#8805; 0).</div>
-                    </div>
-                    <div class="form-field">
-                        <label for="stock_quantity">Quantity <span class="req">*</span></label>
-                        <input type="number" id="stock_quantity" name="stock_quantity"
-                               step="0.01" min="0" placeholder="0" oninput="calcAddProgress()">
-                        <div class="field-error" id="err_add_stock_quantity">Valid quantity required (&#8805; 0).</div>
-                    </div>
-                </div>
-
-                <div class="form-row cols-2">
-                    <div class="form-field">
-                        <label for="product_unit">Unit <span class="req">*</span></label>
-                        <select id="product_unit" name="product_unit" onchange="calcAddProgress()">
-                            <option value="pcs">pcs — pieces</option>
-                            <option value="kls">kg — kilograms</option>
-                            <option value="sack">sack</option>
-                        </select>
-                    </div>
-                    <div class="form-field">
-                        <label for="expiration_date">Expiration date</label>
-                        <input type="date" id="expiration_date" name="expiration_date" oninput="calcAddProgress()">
-                    </div>
-                </div>
-
                 <!-- Footer inside form so submit button works -->
                 <div class="popup-footer">
                     <div class="progress-dots">
@@ -614,72 +699,112 @@ if ($supplierResult) {
      EDIT PRODUCT POPUP
 ═══════════════════════════════════════ -->
 <div id="editPopup" class="popup-overlay" style="display:none;">
-    <div class="popup-content">
-        <div class="form-container">
-            <h2>Edit Product</h2>
+    <div class="popup-modal">
 
-            <!-- Validation summary -->
+        <!-- Header -->
+        <div class="popup-header" id="editPopupHeader">
+            <div class="popup-header-pill">&#9679; Inventory Management</div>
+            <h2>Edit product</h2>
+            <p>Update the product details below.</p>
+            <button type="button" class="popup-close-btn" onclick="cancelEdit()" title="Close">&#10005;</button>
+        </div>
+
+        <!-- Body -->
+        <div class="popup-body">
             <div class="validation-summary" id="editValidationSummary"></div>
 
             <form method="post" action="" id="editProductForm" onsubmit="return validateProductForm('edit')">
                 <input type="hidden" id="edit_product_id" name="product_id">
 
-                <label for="edit_product_name">Product Name: <span style="color:red">*</span></label>
-                <input type="text" id="edit_product_name" name="product_name">
-                <div class="field-error" id="err_edit_product_name">Product name is required.</div>
+                <div class="form-section-label">Product info</div>
 
-                <label for="edit_stock_quantity">Quantity: <span style="color:red">*</span></label>
-                <input type="number" id="edit_stock_quantity" name="stock_quantity" step="0.01" min="0">
-                <div class="field-error" id="err_edit_stock_quantity">Quantity is required and must be 0 or more.</div>
-
-                <label for="edit_category">Category: <span style="color:red">*</span></label>
-                <select id="edit_category" name="category" onchange="handleOthers(this, 'edit_cat_others')">
-                    <option value="">-- Select Category --</option>
-                    <?php foreach ($categoryOptions as $option): ?>
-                        <option value="<?php echo htmlspecialchars($option); ?>"><?php echo htmlspecialchars($option); ?></option>
-                    <?php endforeach; ?>
-                    <option value="__others__">— Others (add new) —</option>
-                </select>
-                <div class="others-input" id="edit_cat_others">
-                    <input type="text" name="new_category" id="edit_new_category" placeholder="Enter new category name">
-                    <div class="others-hint">This will be saved as a new category.</div>
+                <div class="form-row">
+                    <div class="form-field">
+                        <label for="edit_product_name">Product name <span class="req">*</span></label>
+                        <input type="text" id="edit_product_name" name="product_name" placeholder="e.g. Amoxicillin 500mg" oninput="calcEditProgress()">
+                        <div class="field-error" id="err_edit_product_name">Product name is required.</div>
+                    </div>
                 </div>
-                <div class="field-error" id="err_edit_category">Category is required.</div>
 
-                <label for="edit_supplier">Supplier: <span style="color:red">*</span></label>
-                <select id="edit_supplier" name="supplier" onchange="handleOthers(this, 'edit_sup_others')">
-                    <option value="">-- Select Supplier --</option>
-                    <?php foreach ($supplierOptions as $option): ?>
-                        <option value="<?php echo htmlspecialchars($option); ?>"><?php echo htmlspecialchars($option); ?></option>
-                    <?php endforeach; ?>
-                    <option value="__others__">— Others (add new) —</option>
-                </select>
-                <div class="others-input" id="edit_sup_others">
-                    <input type="text" name="new_supplier" id="edit_new_supplier" placeholder="Enter new supplier name">
-                    <div class="others-hint">This will be saved as a new supplier.</div>
+                <div class="form-row cols-2">
+                    <div class="form-field">
+                        <label for="edit_category">Category <span class="req">*</span></label>
+                        <select id="edit_category" name="category" onchange="handleOthers(this, 'edit_cat_others');calcEditProgress()">
+                            <option value="">— Select category —</option>
+                            <?php foreach ($categoryOptions as $option): ?>
+                                <option value="<?php echo htmlspecialchars($option); ?>"><?php echo htmlspecialchars($option); ?></option>
+                            <?php endforeach; ?>
+                            <option value="__others__">— Others (add new) —</option>
+                        </select>
+                        <div class="others-input" id="edit_cat_others">
+                            <input type="text" name="new_category" id="edit_new_category" placeholder="Type new category…" oninput="calcEditProgress()">
+                            <div class="others-hint">&#9733; Will be saved as a new category</div>
+                        </div>
+                        <div class="field-error" id="err_edit_category">Category is required.</div>
+                    </div>
+                    <div class="form-field">
+                        <label for="edit_supplier">Supplier <span class="req">*</span></label>
+                        <select id="edit_supplier" name="supplier" onchange="handleOthers(this, 'edit_sup_others');calcEditProgress()">
+                            <option value="">— Select supplier —</option>
+                            <?php foreach ($supplierOptions as $option): ?>
+                                <option value="<?php echo htmlspecialchars($option); ?>"><?php echo htmlspecialchars($option); ?></option>
+                            <?php endforeach; ?>
+                            <option value="__others__">— Others (add new) —</option>
+                        </select>
+                        <div class="others-input" id="edit_sup_others">
+                            <input type="text" name="new_supplier" id="edit_new_supplier" placeholder="Type new supplier…" oninput="calcEditProgress()">
+                            <div class="others-hint">&#9733; Will be saved as a new supplier</div>
+                        </div>
+                        <div class="field-error" id="err_edit_supplier">Supplier is required.</div>
+                    </div>
                 </div>
-                <div class="field-error" id="err_edit_supplier">Supplier is required.</div>
 
-                <label for="edit_price">Price: <span style="color:red">*</span></label>
-                <input type="number" id="edit_price" name="price" step="0.01" min="0">
-                <div class="field-error" id="err_edit_price">Price is required and must be 0 or more.</div>
+                <div class="form-section-label" style="margin-top:4px">Stock &amp; pricing</div>
 
-                <label for="edit_product_unit">Unit: <span style="color:red">*</span></label>
-                <select id="edit_product_unit" name="product_unit">
-                    <option value="pcs">pcs</option>
-                    <option value="kls">kls</option>
-                    <option value="sack">sack</option>
-                </select>
-
-                <label for="edit_expiration_date">Expiration Date:</label>
-                <input type="date" id="edit_expiration_date" name="expiration_date">
-
-                <div class="form-actions">
-                    <button type="submit" name="edit_product">Update Product</button>
-                    <button type="button" class="secondary-button" onclick="cancelEdit()">Cancel</button>
+                <div class="form-row cols-2">
+                    <div class="form-field">
+                        <label for="edit_price">Price (&#8369;) <span class="req">*</span></label>
+                        <input type="number" id="edit_price" name="price" step="0.01" min="0" placeholder="0.00" oninput="calcEditProgress()">
+                        <div class="field-error" id="err_edit_price">Valid price required (&#8805; 0).</div>
+                    </div>
+                    <div class="form-field">
+                        <label for="edit_stock_quantity">Quantity <span class="req">*</span></label>
+                        <input type="number" id="edit_stock_quantity" name="stock_quantity" step="0.01" min="0" placeholder="0" oninput="calcEditProgress()">
+                        <div class="field-error" id="err_edit_stock_quantity">Valid quantity required (&#8805; 0).</div>
+                    </div>
                 </div>
+
+                <div class="form-row cols-2">
+                    <div class="form-field">
+                        <label for="edit_product_unit">Unit <span class="req">*</span></label>
+                        <select id="edit_product_unit" name="product_unit" onchange="calcEditProgress()">
+                            <option value="pcs">pcs — pieces</option>
+                            <option value="kls">kg — kilograms</option>
+                            <option value="sack">sack</option>
+                            <option value="ml">ml — milliliter</option>
+                            <option value="bottle">bottle</option>
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label for="edit_expiration_date">Expiration date</label>
+                        <input type="date" id="edit_expiration_date" name="expiration_date" oninput="calcEditProgress()">
+                    </div>
+                </div>
+
+                <!-- Footer inside form so submit button works -->
+                <div class="popup-footer">
+                    <div class="progress-dots">
+                        <div class="dot active" id="edit_d1"></div>
+                        <div class="dot" id="edit_d2"></div>
+                        <div class="dot" id="edit_d3"></div>
+                    </div>
+                    <button type="button" class="btn-popup-cancel" onclick="cancelEdit()">Cancel</button>
+                    <button type="submit" name="edit_product" class="btn-add-product">Update product</button>
+                </div>
+
             </form>
         </div>
+
     </div>
 </div>
 
@@ -707,7 +832,7 @@ function cancelEdit() {
    CLEAR FORM (reset values + errors)
 ══════════════════════════════════════════════ */
 function clearForm(prefix) {
-    const ids = ['product_name','category','supplier','price','stock_quantity','product_unit','expiration_date'];
+    const ids = ['product_name','category','supplier'];
     ids.forEach(id => {
         const el = document.getElementById(prefix === 'add' ? id : 'edit_' + id);
         if (!el) return;
@@ -729,8 +854,6 @@ function calcAddProgress() {
         (document.getElementById('product_name')?.value || '').trim(),
         document.getElementById('category')?.value,
         document.getElementById('supplier')?.value,
-        document.getElementById('price')?.value,
-        document.getElementById('stock_quantity')?.value,
     ];
     const filled = vals.filter(v => v && v !== '' && v !== '__others__').length;
     const pct = filled / vals.length;
@@ -739,6 +862,29 @@ function calcAddProgress() {
     const d1 = document.getElementById('add_d1');
     const d2 = document.getElementById('add_d2');
     const d3 = document.getElementById('add_d3');
+    if (d1) d1.className = 'dot' + (pct > 0 ? ' active' : '');
+    if (d2) d2.className = 'dot' + (pct >= 0.6 ? ' active' : '');
+    if (d3) d3.className = 'dot' + (pct === 1 ? ' active' : '');
+}
+
+/* ══════════════════════════════════════════════
+   PROGRESS BAR / DOTS for Edit popup
+══════════════════════════════════════════════ */
+function calcEditProgress() {
+    const vals = [
+        (document.getElementById('edit_product_name')?.value || '').trim(),
+        document.getElementById('edit_category')?.value,
+        document.getElementById('edit_supplier')?.value,
+        document.getElementById('edit_price')?.value,
+        document.getElementById('edit_stock_quantity')?.value,
+    ];
+    const filled = vals.filter(v => v && v !== '' && v !== '__others__').length;
+    const pct = filled / vals.length;
+    const header = document.getElementById('editPopupHeader');
+    if (header) header.style.setProperty('--prog', pct);
+    const d1 = document.getElementById('edit_d1');
+    const d2 = document.getElementById('edit_d2');
+    const d3 = document.getElementById('edit_d3');
     if (d1) d1.className = 'dot' + (pct > 0 ? ' active' : '');
     if (d2) d2.className = 'dot' + (pct >= 0.6 ? ' active' : '');
     if (d3) d3.className = 'dot' + (pct === 1 ? ' active' : '');
@@ -789,6 +935,7 @@ function editProduct(id, name, quantity, category, supplier, unit, price, expira
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
     });
+    calcEditProgress();
     document.getElementById('editPopup').style.display = 'flex';
     document.getElementById('addPopup').style.display  = 'none';
 }
@@ -836,18 +983,21 @@ function validateProductForm(prefix) {
         if (!newSup) { showError(`err_${prefix}_supplier`); errors.push('Please enter a new supplier name.'); }
     }
 
-    // Price
-    const priceEl = document.getElementById(p + 'price');
-    const priceVal = priceEl?.value;
-    if (priceVal === '' || priceVal === null || isNaN(parseFloat(priceVal)) || parseFloat(priceVal) < 0) {
-        showError(`err_${prefix}_price`); errors.push('Price is required and must be 0 or more.');
-    }
+    // Only validate price and quantity for edit form (not for add form)
+    if (prefix === 'edit') {
+        // Price
+        const priceEl = document.getElementById(p + 'price');
+        const priceVal = priceEl?.value;
+        if (priceVal === '' || priceVal === null || isNaN(parseFloat(priceVal)) || parseFloat(priceVal) < 0) {
+            showError(`err_${prefix}_price`); errors.push('Price is required and must be 0 or more.');
+        }
 
-    // Stock quantity
-    const qtyEl = document.getElementById(p + 'stock_quantity');
-    const qtyVal = qtyEl?.value;
-    if (qtyVal === '' || qtyVal === null || isNaN(parseFloat(qtyVal)) || parseFloat(qtyVal) < 0) {
-        showError(`err_${prefix}_stock_quantity`); errors.push('Quantity is required and must be 0 or more.');
+        // Stock quantity
+        const qtyEl = document.getElementById(p + 'stock_quantity');
+        const qtyVal = qtyEl?.value;
+        if (qtyVal === '' || qtyVal === null || isNaN(parseFloat(qtyVal)) || parseFloat(qtyVal) < 0) {
+            showError(`err_${prefix}_stock_quantity`); errors.push('Quantity is required and must be 0 or more.');
+        }
     }
 
     if (errors.length > 0) {
