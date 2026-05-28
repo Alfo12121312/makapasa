@@ -15,6 +15,15 @@ $salesStmt->execute();
 $sales = $salesStmt->get_result()->fetch_assoc();
 $salesStmt->close();
 
+$cogsStmt = $conn->prepare("SELECT COALESCE(SUM(i.cost_price * s.quantity), 0) AS total_cogs
+                           FROM sales s
+                           LEFT JOIN inventory i ON i.id = s.product_id
+                           WHERE DATE(s.created_at) BETWEEN ? AND ?");
+$cogsStmt->bind_param("ss", $start, $end);
+$cogsStmt->execute();
+$cogs = $cogsStmt->get_result()->fetch_assoc();
+$cogsStmt->close();
+
 $expenseStmt = $conn->prepare("SELECT COALESCE(SUM(amount), 0) total_expenses
                                FROM expenses
                                WHERE expense_date BETWEEN ? AND ?");
@@ -23,27 +32,25 @@ $expenseStmt->execute();
 $expenses = $expenseStmt->get_result()->fetch_assoc();
 $expenseStmt->close();
 
-$payrollStmt = $conn->prepare("SELECT e.pay_type, e.monthly_salary, e.daily_rate, COUNT(DISTINCT a.attendance_date) AS days_present
-                              FROM employees e
-                              LEFT JOIN attendance a ON a.employee_id = e.id AND a.attendance_date BETWEEN ? AND ?
-                              WHERE e.status = 'Active'
-                              GROUP BY e.id, e.pay_type, e.monthly_salary, e.daily_rate");
-$payroll = 0;
-if ($payrollStmt) {
-    $payrollStmt->bind_param("ss", $start, $end);
-    $payrollStmt->execute();
-    $payrollResult = $payrollStmt->get_result();
-    while ($row = $payrollResult->fetch_assoc()) {
-        $payroll += $row['pay_type'] === 'Monthly'
-            ? (float)$row['monthly_salary']
-            : ((float)$row['daily_rate'] * (float)$row['days_present']);
-    }
-    $payrollStmt->close();
+$payrollRecordStmt = $conn->prepare("SELECT COALESCE(SUM(gross_salary), 0) payroll_expense,
+                                           COALESCE(SUM(company_statutory_expense), 0) statutory_expense
+                                    FROM payroll_records
+                                    WHERE period_start >= ? AND period_end <= ?");
+$payrollExpense = 0;
+$statutoryExpense = 0;
+if ($payrollRecordStmt) {
+    $payrollRecordStmt->bind_param("ss", $start, $end);
+    $payrollRecordStmt->execute();
+    $payrollResult = $payrollRecordStmt->get_result()->fetch_assoc();
+    $payrollExpense = (float)$payrollResult['payroll_expense'];
+    $statutoryExpense = (float)$payrollResult['statutory_expense'];
+    $payrollRecordStmt->close();
 }
 
 $totalSales = (float)$sales['total_sales'];
+$totalCOGS = (float)$cogs['total_cogs'];
 $totalExpenses = (float)$expenses['total_expenses'];
-$netProfit = $totalSales - $totalExpenses - $payroll;
+$netProfit = $totalSales - $totalCOGS - $totalExpenses - $payrollExpense - $statutoryExpense;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -70,8 +77,10 @@ $netProfit = $totalSales - $totalExpenses - $payroll;
     </div>
     <div class="stats-grid">
         <div class="stat-card"><div class="label">Sales</div><div class="value">PHP <?php echo number_format($totalSales, 2); ?></div></div>
-        <div class="stat-card"><div class="label">Payroll</div><div class="value">PHP <?php echo number_format($payroll, 2); ?></div></div>
+        <div class="stat-card"><div class="label">Cost of Goods Sold</div><div class="value">PHP <?php echo number_format($totalCOGS, 2); ?></div></div>
         <div class="stat-card"><div class="label">Expenses</div><div class="value">PHP <?php echo number_format($totalExpenses, 2); ?></div></div>
+        <div class="stat-card"><div class="label">Payroll Expense</div><div class="value">PHP <?php echo number_format($payrollExpense, 2); ?></div></div>
+        <div class="stat-card"><div class="label">Statutory Expense</div><div class="value">PHP <?php echo number_format($statutoryExpense, 2); ?></div></div>
         <div class="stat-card"><div class="label">Net Profit</div><div class="value">PHP <?php echo number_format($netProfit, 2); ?></div></div>
     </div>
 </div>

@@ -2,10 +2,7 @@
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 
-$conn = new mysqli("localhost", "root", "", "agrivet_db");
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
+$conn = app_connect();
 
 /* $conn->query("CREATE TABLE IF NOT EXISTS employees (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -37,7 +34,11 @@ $stats = [
     'today_orders' => 0,
     'low_stock' => 0,
     'employees' => 0,
-    'today_attendance' => 0
+    'today_attendance' => 0,
+    'monthly_revenue' => 0,
+    'monthly_expenses' => 0,
+    'payroll_expense' => 0,
+    'statutory_share' => 0
 ];
 $healthChecks = [];
 $healthWarnings = [];
@@ -77,6 +78,27 @@ if ($res && $res->num_rows > 0) {
     $healthWarnings[] = 'Sales query failed. Check if sales.created_at exists.';
 }
 
+$currentMonth = date('Y-m');
+$monthStart = $currentMonth . '-01';
+$monthEnd = date('Y-m-t', strtotime($monthStart));
+$revenueRes = $conn->query("SELECT COALESCE(SUM(total_price), 0) monthly_revenue FROM sales WHERE DATE(created_at) BETWEEN '$monthStart' AND '$monthEnd'");
+if ($revenueRes && $revenueRes->num_rows > 0) {
+    $stats['monthly_revenue'] = (float)$revenueRes->fetch_assoc()['monthly_revenue'];
+}
+$expenseRes = $conn->query("SELECT COALESCE(SUM(amount), 0) monthly_expenses FROM expenses WHERE expense_date BETWEEN '$monthStart' AND '$monthEnd'");
+if ($expenseRes && $expenseRes->num_rows > 0) {
+    $stats['monthly_expenses'] = (float)$expenseRes->fetch_assoc()['monthly_expenses'];
+}
+$payrollStats = $conn->query("SELECT COALESCE(SUM(gross_salary), 0) payroll_expense, COALESCE(SUM(company_statutory_expense), 0) statutory_share
+                             FROM payroll_records
+                             WHERE period_start >= '$monthStart' AND period_end <= '$monthEnd'");
+if ($payrollStats && $payrollStats->num_rows > 0) {
+    $p = $payrollStats->fetch_assoc();
+    $stats['payroll_expense'] = (float)$p['payroll_expense'];
+    $stats['statutory_share'] = (float)$p['statutory_share'];
+}
+$netProfit = $stats['monthly_revenue'] - $stats['monthly_expenses'] - $stats['payroll_expense'] - $stats['statutory_share'];
+
 $res = $conn->query("SELECT COUNT(*) total_employees FROM employees WHERE status='Active'");
 if ($res && $res->num_rows > 0) {
     $stats['employees'] = (int)$res->fetch_assoc()['total_employees'];
@@ -92,6 +114,23 @@ if ($res && $res->num_rows > 0) {
 } elseif (!$res) {
     $healthWarnings[] = 'Attendance query failed.';
 }
+
+$currentMonth = date('Y-m');
+$monthStart = $currentMonth . '-01';
+$monthEnd = date('Y-m-t', strtotime($monthStart));
+$payrollStats = $conn->query("SELECT COALESCE(SUM(gross_salary), 0) payroll_expense, COALESCE(SUM(company_statutory_expense), 0) statutory_share
+                             FROM payroll_records
+                             WHERE period_start >= '$monthStart' AND period_end <= '$monthEnd'");
+if ($payrollStats && $payrollStats->num_rows > 0) {
+    $p = $payrollStats->fetch_assoc();
+    $stats['payroll_expense'] = (float)$p['payroll_expense'];
+    $stats['statutory_share'] = (float)$p['statutory_share'];
+} else {
+    $stats['payroll_expense'] = 0;
+    $stats['statutory_share'] = 0;
+}
+
+$netProfit = $stats['today_sales'] - 0 - $stats['payroll_expense'] - $stats['statutory_share'];
 
 $topProducts = $conn->query("SELECT i.product_name, SUM(s.quantity) qty, SUM(s.total_price) revenue
                              FROM sales s
@@ -182,6 +221,8 @@ $healthOk = count($healthWarnings) === 0;
         <div class="stat-card"><div class="label">Low Stock Items</div><div class="value"><?php echo number_format($stats['low_stock']); ?></div></div>
         <div class="stat-card"><div class="label">Active Employees</div><div class="value"><?php echo number_format($stats['employees']); ?></div></div>
         <div class="stat-card"><div class="label">Present Today</div><div class="value"><?php echo number_format($stats['today_attendance']); ?></div></div>
+        <div class="stat-card"><div class="label">Payroll Expense</div><div class="value">PHP <?php echo number_format($stats['payroll_expense'] ?? 0, 2); ?></div></div>
+        <div class="stat-card"><div class="label">Net Profit</div><div class="value">PHP <?php echo number_format($netProfit, 2); ?></div></div>
     </div>
 
     <div class="analytics-grid">

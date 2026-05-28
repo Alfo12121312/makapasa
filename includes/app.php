@@ -49,6 +49,41 @@ function ensure_core_schema($conn) {
         UNIQUE KEY uniq_employee_day (employee_id, attendance_date)
     )");
 
+    $employeeContributionType = $conn->query("SHOW COLUMNS FROM employees LIKE 'contribution_type'");
+    if ($employeeContributionType && $employeeContributionType->num_rows === 0) {
+        $conn->query("ALTER TABLE employees ADD COLUMN contribution_type VARCHAR(50) NULL AFTER daily_rate");
+    }
+    $employeeContributionAmount = $conn->query("SHOW COLUMNS FROM employees LIKE 'contribution_amount'");
+    if ($employeeContributionAmount && $employeeContributionAmount->num_rows === 0) {
+        $conn->query("ALTER TABLE employees ADD COLUMN contribution_amount DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER contribution_type");
+    }
+
+    $conn->query("CREATE TABLE IF NOT EXISTS cash_advances (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        employee_id INT NOT NULL,
+        advance_date DATE NOT NULL,
+        amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+        remaining_balance DECIMAL(12,2) NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS payroll_records (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        employee_id INT NOT NULL,
+        period_start DATE NOT NULL,
+        period_end DATE NOT NULL,
+        cutoff ENUM('first','second') NOT NULL DEFAULT 'second',
+        gross_salary DECIMAL(12,2) NOT NULL DEFAULT 0,
+        late_deduction DECIMAL(12,2) NOT NULL DEFAULT 0,
+        employee_statutory_deduction DECIMAL(12,2) NOT NULL DEFAULT 0,
+        company_statutory_expense DECIMAL(12,2) NOT NULL DEFAULT 0,
+        cash_advance_deduction DECIMAL(12,2) NOT NULL DEFAULT 0,
+        total_deductions DECIMAL(12,2) NOT NULL DEFAULT 0,
+        net_salary DECIMAL(12,2) NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_payroll_period (employee_id, period_start, period_end, cutoff)
+    )");
+
     $conn->query("CREATE TABLE IF NOT EXISTS cashier_sessions (
         id INT AUTO_INCREMENT PRIMARY KEY,
         cashier_id INT NOT NULL,

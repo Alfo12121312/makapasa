@@ -52,11 +52,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['time_out'])) {
 }
 
 $employees = $conn->query("SELECT id, employee_code, full_name, position FROM employees WHERE status='Active' ORDER BY full_name");
-$logs = $conn->query("SELECT e.full_name, e.position, a.attendance_date, a.time_in, a.time_out, a.total_hours
-                      FROM attendance a
-                      JOIN employees e ON e.id = a.employee_id
-                      ORDER BY a.attendance_date DESC, e.full_name ASC
-                      LIMIT 200");
+$activeEmployees = [];
+if ($employees && $employees->num_rows > 0) {
+    while ($emp = $employees->fetch_assoc()) {
+        $activeEmployees[] = $emp;
+    }
+}
+
+$filterEmployee = isset($_GET['employee_id']) ? (int)$_GET['employee_id'] : 0;
+$filterFrom = isset($_GET['from_date']) ? $_GET['from_date'] : '';
+$filterTo = isset($_GET['to_date']) ? $_GET['to_date'] : '';
+
+$logsSql = "SELECT e.full_name, e.position, a.attendance_date, a.time_in, a.time_out, a.total_hours
+             FROM attendance a
+             JOIN employees e ON e.id = a.employee_id";
+$where = [];
+$params = [];
+$types = '';
+
+if ($filterEmployee > 0) {
+    $where[] = 'a.employee_id = ?';
+    $params[] = $filterEmployee;
+    $types .= 'i';
+}
+if ($filterFrom !== '') {
+    $where[] = 'a.attendance_date >= ?';
+    $params[] = $filterFrom;
+    $types .= 's';
+}
+if ($filterTo !== '') {
+    $where[] = 'a.attendance_date <= ?';
+    $params[] = $filterTo;
+    $types .= 's';
+}
+
+if (!empty($where)) {
+    $logsSql .= ' WHERE ' . implode(' AND ', $where);
+}
+$logsSql .= ' ORDER BY a.attendance_date DESC, e.full_name ASC LIMIT 200';
+
+$logsStmt = $conn->prepare($logsSql);
+if ($types !== '') {
+    $bindParams = array_merge([$types], $params);
+    $refs = [];
+    foreach ($bindParams as $key => $value) {
+        $refs[$key] = &$bindParams[$key];
+    }
+    call_user_func_array([$logsStmt, 'bind_param'], $refs);
+}
+$logsStmt->execute();
+$logs = $logsStmt->get_result();
+$logsStmt->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -77,7 +123,7 @@ $logs = $conn->query("SELECT e.full_name, e.position, a.attendance_date, a.time_
         <table class="userTable">
             <thead><tr><th>Employee</th><th>Position</th><th>Time In</th><th>Time Out</th></tr></thead>
             <tbody>
-            <?php if ($employees && $employees->num_rows > 0): while ($emp = $employees->fetch_assoc()): ?>
+            <?php if (count($activeEmployees) > 0): foreach ($activeEmployees as $emp): ?>
                 <tr>
                     <td><?php echo htmlspecialchars($emp['full_name']); ?></td>
                     <td><?php echo htmlspecialchars($emp['position']); ?></td>
@@ -94,7 +140,7 @@ $logs = $conn->query("SELECT e.full_name, e.position, a.attendance_date, a.time_
                         </form>
                     </td>
                 </tr>
-            <?php endwhile; else: ?>
+            <?php endforeach; else: ?>
                 <tr><td colspan="4">No active employees yet.</td></tr>
             <?php endif; ?>
             </tbody>
@@ -103,6 +149,29 @@ $logs = $conn->query("SELECT e.full_name, e.position, a.attendance_date, a.time_
 
     <div class="table-section">
         <h2>Attendance Logs</h2>
+        <div class="report-filters" style="margin-bottom:18px; display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
+            <form method="get" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                <label>
+                    Employee
+                    <select name="employee_id">
+                        <option value="0">All employees</option>
+                        <?php foreach ($activeEmployees as $empFilter): ?>
+                            <option value="<?php echo (int)$empFilter['id']; ?>" <?php echo $filterEmployee === (int)$empFilter['id'] ? 'selected' : ''; ?>><?php echo htmlspecialchars($empFilter['full_name']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label>
+                    From
+                    <input type="date" name="from_date" value="<?php echo htmlspecialchars($filterFrom); ?>">
+                </label>
+                <label>
+                    To
+                    <input type="date" name="to_date" value="<?php echo htmlspecialchars($filterTo); ?>">
+                </label>
+                <button type="submit" class="filter-btn">Filter</button>
+                <a href="Attendance.php" class="filter-btn">Reset</a>
+            </form>
+        </div>
         <div class="user-table-wrapper">
             <table class="userTable">
                 <thead><tr><th>Employee</th><th>Position</th><th>Date</th><th>Time In</th><th>Time Out</th><th>Total Hours</th></tr></thead>
