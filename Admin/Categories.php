@@ -104,6 +104,15 @@ $summary = $summaryResult ? $summaryResult->fetch_assoc() : ['category_count' =>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Categories</title>
     <link rel="stylesheet" href="../style.css">
+    <style>
+    .form-container{max-width:900px}
+    .form-grid{display:flex;gap:16px;flex-wrap:wrap}
+    .form-column{flex:1;min-width:220px;display:flex;flex-direction:column}
+    .form-column label{margin-bottom:6px;font-weight:600}
+    .form-column input{padding:8px;border:1px solid #ccc;border-radius:4px}
+    .form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+    @media (max-width:600px){.form-grid{flex-direction:column}.form-actions{justify-content:flex-start}}
+    </style>
 </head>
 <body>
 <?php render_sidebar('admin', 'Categories.php', 'Admin'); ?>
@@ -140,10 +149,18 @@ $summary = $summaryResult ? $summaryResult->fetch_assoc() : ['category_count' =>
         <form method="post" action="Categories.php<?php echo $editing_category ? '?id=' . (int)$editing_category['id'] : ''; ?>">
             <input type="hidden" name="category_id" value="<?php echo htmlspecialchars($editing_category['id'] ?? ''); ?>">
             <input type="hidden" name="category_action" value="<?php echo $editing_category ? 'update' : 'add'; ?>">
-            <label>Category Name <span style="color:red">*</span></label>
-            <input type="text" name="category_name" required value="<?php echo htmlspecialchars($editing_category['category_name'] ?? ''); ?>">
-            <label>Description</label>
-            <input type="text" name="category_description" value="<?php echo htmlspecialchars($editing_category['category_description'] ?? ''); ?>">
+
+            <div class="form-grid">
+                <div class="form-column">
+                    <label>Category Name <span style="color:red">*</span></label>
+                    <input type="text" name="category_name" required value="<?php echo htmlspecialchars($editing_category['category_name'] ?? ''); ?>">
+                </div>
+                <div class="form-column">
+                    <label>Description</label>
+                    <input type="text" name="category_description" value="<?php echo htmlspecialchars($editing_category['category_description'] ?? ''); ?>">
+                </div>
+            </div>
+
             <div class="form-actions">
                 <?php if ($editing_category): ?>
                     <a href="Categories.php" class="btn btn-secondary">Cancel</a>

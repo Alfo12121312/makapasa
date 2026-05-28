@@ -120,6 +120,15 @@ $summary = $totals ? $totals->fetch_assoc() : ['supplier_count' => 0, 'active_co
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Suppliers</title>
     <link rel="stylesheet" href="../style.css">
+    <style>
+    .form-container{max-width:900px}
+    .form-grid{display:flex;gap:16px;flex-wrap:wrap}
+    .form-column{flex:1;min-width:220px;display:flex;flex-direction:column}
+    .form-column label{margin-bottom:6px;font-weight:600}
+    .form-column input{padding:8px;border:1px solid #ccc;border-radius:4px}
+    .form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+    @media (max-width:600px){.form-grid{flex-direction:column}.form-actions{justify-content:flex-start}}
+    </style>
 </head>
 <body>
 <?php render_sidebar('admin', 'Suppliers.php', 'Admin'); ?>
@@ -156,14 +165,22 @@ $summary = $totals ? $totals->fetch_assoc() : ['supplier_count' => 0, 'active_co
         <form method="post" action="Suppliers.php<?php echo $editing_supplier ? '?id=' . (int)$editing_supplier['id'] : ''; ?>">
             <input type="hidden" name="supplier_id" value="<?php echo htmlspecialchars($editing_supplier['id'] ?? ''); ?>">
             <input type="hidden" name="supplier_action" value="<?php echo $editing_supplier ? 'update' : 'add'; ?>">
-            <label>Supplier Name <span style="color:red">*</span></label>
-            <input type="text" name="supplier_name" required value="<?php echo htmlspecialchars($editing_supplier['supplier_name'] ?? ''); ?>">
-            <label>Contact Number</label>
-            <input type="text" name="contact_number" placeholder="e.g. +63 912 345 6789" pattern="[0-9+\-\s]+" value="<?php echo htmlspecialchars($editing_supplier['contact_number'] ?? ''); ?>">
-            <label>Email or N/A</label>
-            <input type="text" name="contact_email" placeholder="Email or N/A" value="<?php echo htmlspecialchars($editing_supplier['contact_email'] ?? ''); ?>">
-            <label>Description</label>
-            <input type="text" name="supplier_description" value="<?php echo htmlspecialchars($editing_supplier['supplier_description'] ?? ''); ?>">
+
+            <div class="form-grid">
+                <div class="form-column">
+                    <label>Supplier Name <span style="color:red">*</span></label>
+                    <input type="text" name="supplier_name" required value="<?php echo htmlspecialchars($editing_supplier['supplier_name'] ?? ''); ?>">
+                    <label>Contact Number</label>
+                    <input type="text" name="contact_number" placeholder="e.g. +63 912 345 6789" pattern="[0-9+\-\s]+" value="<?php echo htmlspecialchars($editing_supplier['contact_number'] ?? ''); ?>">
+                </div>
+                <div class="form-column">
+                    <label>Email or N/A</label>
+                    <input type="text" name="contact_email" placeholder="Email or N/A" value="<?php echo htmlspecialchars($editing_supplier['contact_email'] ?? ''); ?>">
+                    <label>Description</label>
+                    <input type="text" name="supplier_description" value="<?php echo htmlspecialchars($editing_supplier['supplier_description'] ?? ''); ?>">
+                </div>
+            </div>
+
             <div class="form-actions">
                 <?php if ($editing_supplier): ?>
                     <a href="Suppliers.php" class="btn btn-secondary">Cancel</a>

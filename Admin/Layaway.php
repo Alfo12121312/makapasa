@@ -5,12 +5,18 @@ require_roles(['Admin'], '../Login.php');
 $conn = app_connect();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_layaway'])) {
-    $customerName = trim($_POST['customer_name']);
-    $contact = trim($_POST['contact_number']);
+    $customerId = (int)$_POST['customer_id'];
     $productId = (int)$_POST['product_id'];
     $quantity = max(1, (int)$_POST['quantity']);
     $downPayment = max(0, (float)$_POST['down_payment']);
     $notes = trim($_POST['notes']);
+
+    // Get customer name
+    $customer_check = $conn->prepare("SELECT full_name FROM customers WHERE id = ?");
+    $customer_check->bind_param("i", $customerId);
+    $customer_check->execute();
+    $customer = $customer_check->get_result()->fetch_assoc();
+    $customer_check->close();
 
     $stmt = $conn->prepare("SELECT product_name, price, stock_quantity FROM inventory WHERE id = ? AND status = 'Active' FOR UPDATE");
     $conn->begin_transaction();
@@ -19,14 +25,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_layaway'])) {
     $product = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    if ($customerName !== '' && $product && (int)$product['stock_quantity'] >= $quantity) {
+    if ($customer && $product && (int)$product['stock_quantity'] >= $quantity) {
+        $customerName = $customer['full_name'];
         $totalAmount = (float)$product['price'] * $quantity;
         $balance = max(0, $totalAmount - $downPayment);
 
-        $stmt = $conn->prepare("INSERT INTO layaways (customer_name, contact_number, total_amount, down_payment, balance_amount, notes, created_by)
-                                VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt = $conn->prepare("INSERT INTO layaways (customer_name, total_amount, down_payment, balance_amount, notes, created_by)
+                                VALUES (?, ?, ?, ?, ?, ?)");
         $userId = auth_user_id();
-        $stmt->bind_param("ssdddsi", $customerName, $contact, $totalAmount, $downPayment, $balance, $notes, $userId);
+        $stmt->bind_param("sdddsi", $customerName, $totalAmount, $downPayment, $balance, $notes, $userId);
         $stmt->execute();
         $layawayId = $conn->insert_id;
         $stmt->close();
@@ -92,6 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cancel_layaway'])) {
     $conn->query("UPDATE stock_reservations SET status = 'Cancelled' WHERE layaway_id = {$layawayId}");
 }
 
+$customers = $conn->query("SELECT id, full_name FROM customers ORDER BY full_name ASC");
 $products = $conn->query("SELECT id, product_name, price, stock_quantity FROM inventory WHERE status = 'Active' ORDER BY product_name ASC");
 $layaways = $conn->query("SELECT l.*, COALESCE(SUM(lp.amount), 0) total_paid
                           FROM layaways l
@@ -118,9 +126,16 @@ $layaways = $conn->query("SELECT l.*, COALESCE(SUM(lp.amount), 0) total_paid
     </div>
     <div class="form-container">
         <h2>Create Layaway</h2>
+        <p>To create a layaway, first add the customer in <a href="Customers.php">Customer Management</a></p>
         <form method="post">
-            <input type="" name="customer_name" placeholder="Customer Name" required>
-            <input type="number" name="contact_number" placeholder="Contact Number">
+            <select name="customer_id" required>
+                <option value="">Select Customer</option>
+                <?php if ($customers): while ($customer = $customers->fetch_assoc()): ?>
+                    <option value="<?php echo (int)$customer['id']; ?>">
+                        <?php echo htmlspecialchars($customer['full_name']); ?>
+                    </option>
+                <?php endwhile; endif; ?>
+            </select>
             <select name="product_id" required>
                 <option value="">Select Product</option>
                 <?php if ($products): while ($product = $products->fetch_assoc()): ?>

@@ -3,14 +3,36 @@ require_once __DIR__ . '/../includes/app.php';
 require_roles(['Admin'], '../Login.php');
 
 $conn = app_connect();
-$month = $_GET['month'] ?? date('Y-m');
 
-$stmt = $conn->prepare("SELECT cs.*, u.username
-                        FROM cashier_sessions cs
-                        LEFT JOIN users u ON u.id = cs.cashier_id
-                        WHERE DATE_FORMAT(cs.session_date, '%Y-%m') = ?
-                        ORDER BY cs.session_date DESC, cs.started_at DESC");
-$stmt->bind_param("s", $month);
+// Get filter values
+$date_from = $_GET['date_from'] ?? date('Y-m-d', strtotime('-30 days'));
+$date_to = $_GET['date_to'] ?? date('Y-m-d');
+$cashier_id = $_GET['cashier_id'] ?? '';
+
+// Get all cashiers for dropdown
+$cashiers_stmt = $conn->prepare("SELECT id, username FROM users WHERE role = 'Cashier' ORDER BY username");
+$cashiers_stmt->execute();
+$cashiers = $cashiers_stmt->get_result();
+$cashiers_stmt->close();
+
+// Build query with filters
+$query = "SELECT cs.*, u.username
+          FROM cashier_sessions cs
+          LEFT JOIN users u ON u.id = cs.cashier_id
+          WHERE DATE(cs.session_date) >= ? AND DATE(cs.session_date) <= ?";
+$params = [$date_from, $date_to];
+$types = "ss";
+
+if ($cashier_id) {
+    $query .= " AND cs.cashier_id = ?";
+    $params[] = $cashier_id;
+    $types .= "i";
+}
+
+$query .= " ORDER BY cs.session_date DESC, cs.started_at DESC";
+
+$stmt = $conn->prepare($query);
+$stmt->bind_param($types, ...$params);
 $stmt->execute();
 $sessions = $stmt->get_result();
 $stmt->close();
@@ -33,8 +55,26 @@ $stmt->close();
         </div>
     </div>
     <div class="report-filters">
-        <form method="get">
-            <input type="month" name="month" value="<?php echo htmlspecialchars($month); ?>">
+        <form method="get" style="display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end;">
+            <div class="filter-group">
+                <label>From Date:</label>
+                <input type="date" name="date_from" value="<?php echo htmlspecialchars($date_from); ?>">
+            </div>
+            <div class="filter-group">
+                <label>To Date:</label>
+                <input type="date" name="date_to" value="<?php echo htmlspecialchars($date_to); ?>">
+            </div>
+            <div class="filter-group">
+                <label>Cashier:</label>
+                <select name="cashier_id">
+                    <option value="">All Cashiers</option>
+                    <?php while ($cashier = $cashiers->fetch_assoc()): ?>
+                        <option value="<?php echo $cashier['id']; ?>" <?php echo ($cashier_id == $cashier['id']) ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($cashier['username']); ?>
+                        </option>
+                    <?php endwhile; ?>
+                </select>
+            </div>
             <button type="submit" class="filter-btn">Apply</button>
         </form>
     </div>
