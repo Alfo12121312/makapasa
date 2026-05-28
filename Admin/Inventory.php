@@ -530,7 +530,7 @@ $suppliers_result = $conn->query($suppliers_sql);
         </select>
     </div>
     <div class="filter-group">
-        <button type="button" class="action-btn" onclick="window.location.href='Stock-History.php'" style="padding: 8px 16px;">📊 Stock History</button>
+        <button type="button" class="action-btn" onclick="window.location.href='Stock-History.php'" style="padding: 8px 16px;">Stock History</button>
     </div>
 </div>
 

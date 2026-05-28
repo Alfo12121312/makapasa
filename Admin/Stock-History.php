@@ -2,19 +2,7 @@
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager', 'Owner'], '../Login.php');
 
-// Database configuration
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "agrivet_db";
-
-// Create connection
-$conn = new mysqli($servername, $username, $password, $dbname);
-
-// Check connection
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
+$conn = app_connect();
 
 // Handle AJAX request for stock history
 if ($_SERVER["REQUEST_METHOD"] == "GET" && isset($_GET['action']) && $_GET['action'] === 'get_stock_history') {
@@ -26,11 +14,12 @@ if ($_SERVER["REQUEST_METHOD"] == "GET" && isset($_GET['action']) && $_GET['acti
     $movementType = $_GET['movement_type'] ?? null;
     
     // Build query
-    $query = "SELECT sm.id, sm.product_id, sm.movement_type, sm.quantity, sm.cost_price, sm.batch_reference, sm.notes, sm.created_by, sm.created_at, 
-                     i.product_name, e.username
+    $query = "SELECT sm.id, sm.product_id, sm.movement_type, sm.quantity, sm.cost_price, sm.batch_reference, sm.notes, sm.created_at, 
+                     i.product_name, COALESCE(e.full_name, u.username, 'System') AS created_by_name
               FROM stock_movements sm
               LEFT JOIN inventory i ON sm.product_id = i.id
               LEFT JOIN employees e ON sm.created_by = e.id
+              LEFT JOIN users u ON sm.created_by = u.id
               WHERE 1=1";
     
     $params = [];
@@ -79,8 +68,8 @@ if ($_SERVER["REQUEST_METHOD"] == "GET" && isset($_GET['action']) && $_GET['acti
             'quantity' => (int)$row['quantity'],
             'cost_price' => (float)$row['cost_price'],
             'batch_reference' => $row['batch_reference'],
-            // 'notes' => $row['notes'] ?? 'N/A',
-            'created_by' => $row['username'] ?? 'System',
+            'notes' => $row['notes'] ?? 'N/A',
+            'created_by' => $row['created_by_name'] ?? 'System',
             'created_at' => date('Y-m-d H:i', strtotime($row['created_at']))
         ];
     }
@@ -268,7 +257,7 @@ if ($productResult && $productResult->num_rows > 0) {
 <body>
 <div class="page-container">
     <div class="page-header">
-        <h1>📊 Stock Movement History</h1>
+        <h1>Stock Movement History</h1>
         <a href="Inventory.php" class="back-button">← Back to Inventory</a>
     </div>
 
@@ -320,7 +309,7 @@ if ($productResult && $productResult->num_rows > 0) {
                         <th>Quantity</th>
                         <th>Cost Price</th>
                         <th>Batch Reference</th>
-                        <!-- <th>Notes</th> -->
+                        <th>Notes</th>
                         <th>User</th>
                     </tr>
             </thead>
@@ -375,7 +364,7 @@ function populateHistoryTable(movements) {
     
     if (movements.length === 0) {
         const row = document.createElement('tr');
-        row.innerHTML = '<td colspan="7" class="no-results">No movements found</td>';
+        row.innerHTML = '<td colspan="8" class="no-results">No movements found</td>';
         tbody.appendChild(row);
         return;
     }
@@ -388,10 +377,10 @@ function populateHistoryTable(movements) {
         let typeLabel = '';
         if (movement.movement_type === 'IN') {
             typeColor = '#27ae60';
-            typeLabel = '📥 Stock In';
+            typeLabel = 'Stock In';
         } else if (movement.movement_type === 'OUT') {
             typeColor = '#e74c3c';
-            typeLabel = '📤 Stock Out';
+            typeLabel = 'Stock Out';
         } else {
             typeColor = '#f39c12';
             typeLabel = '⚠️ ' + movement.movement_type;
@@ -404,7 +393,7 @@ function populateHistoryTable(movements) {
             <td>${movement.quantity}</td>
             <td>₱${parseFloat(movement.cost_price || 0).toFixed(2)}</td>
             <td><code>${movement.batch_reference}</code></td>
-            <td><small>${movement.notes}</small></td>
+            <td><small>${movement.notes || 'N/A'}</small></td>
             <td><em>${movement.created_by}</em></td>
         `;
         
