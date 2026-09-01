@@ -46,6 +46,16 @@ function is_system_admin() {
 }
 
 function can_manage_store() {
+    // Prefer permission-based check if available
+    $conn = null;
+    if (function_exists('app_connect')) {
+        $conn = app_connect();
+    }
+    if ($conn) {
+        $res = has_permission($conn, 'manage_store');
+        $conn->close();
+        return $res;
+    }
     return auth_user_role() === 'Admin';
 }
 
@@ -87,11 +97,42 @@ function setting_enabled($conn, $key, $default = false) {
 }
 
 function cashier_can_apply_discounts($conn) {
-    return is_admin() || setting_enabled($conn, 'cashier_can_apply_discounts', false);
+    return is_admin() || setting_enabled($conn, 'cashier_can_apply_discounts', false) || has_permission($conn, 'apply_discounts');
 }
 
 function cashier_can_manage_layaway_payments($conn) {
-    return is_admin() || setting_enabled($conn, 'cashier_can_manage_layaway_payments', true);
+    return is_admin() || setting_enabled($conn, 'cashier_can_manage_layaway_payments', true) || has_permission($conn, 'manage_layaway_payments');
+}
+
+// ============ Dynamic Role Permissions ============
+function get_roles_permissions($conn) {
+    $stmt = $conn->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'roles_permissions' LIMIT 1");
+    if (!$stmt) return [];
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $out = [];
+    if ($res && $res->num_rows > 0) {
+        $row = $res->fetch_assoc();
+        $decoded = json_decode($row['setting_value'], true);
+        if (is_array($decoded)) $out = $decoded;
+    }
+    $stmt->close();
+    return $out;
+}
+
+function get_role_permissions($conn, $role) {
+    $map = get_roles_permissions($conn);
+    return isset($map[$role]) && is_array($map[$role]) ? $map[$role] : [];
+}
+
+function current_user_permissions($conn) {
+    $role = auth_user_role();
+    return get_role_permissions($conn, $role);
+}
+
+function has_permission($conn, $permission) {
+    $perms = current_user_permissions($conn);
+    return in_array($permission, $perms, true) || auth_user_role() === 'Admin';
 }
 
 function ensure_role_schema($conn) {

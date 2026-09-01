@@ -237,6 +237,15 @@ function ensure_core_schema($conn) {
         'cashier_can_manage_layaway_payments' => '1'
     ];
 
+    // Default roles -> permissions mapping. Stored as JSON in system_settings
+    // Can be edited later via a settings UI to avoid hard-coding roles/permissions
+    $default_roles_permissions = json_encode([
+        'Admin' => ['manage_store', 'manage_users', 'view_reports', 'manage_settings'],
+        'Owner' => ['view_reports', 'manage_finance'],
+        'Cashier' => ['pos', 'create_sales', 'view_own_receipts']
+    ]);
+    $settings['roles_permissions'] = $default_roles_permissions;
+
     foreach ($settings as $key => $value) {
         $stmt = $conn->prepare("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES (?, ?)");
         if ($stmt) {

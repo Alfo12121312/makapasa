@@ -1,42 +1,60 @@
 <?php
 require_once __DIR__ . '/../includes/app.php';
-require_roles(['System Admin'], '../Login.php');
+require_roles(['Admin'], '../Login.php');
 $user_role = auth_user_role();
 $can_create = true;
 $can_toggle = true;
 
-// Database configuration
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "agrivet_db";
+// Use central app DB connection (ensures schemas/settings)
+$conn = app_connect();
 
-// Create connection
-$conn = new mysqli($servername, $username, $password, $dbname);
-
-// Check connection
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
+// Load roles/permissions mapping from system settings (dynamic, editable)
+$roles_map = [];
+$available_roles = ['Admin', 'Owner', 'Cashier'];
+$stmt_roles = $conn->prepare("SELECT setting_value FROM system_settings WHERE setting_key = 'roles_permissions' LIMIT 1");
+if ($stmt_roles) {
+    $stmt_roles->execute();
+    $res = $stmt_roles->get_result();
+    if ($res && $res->num_rows > 0) {
+        $row = $res->fetch_assoc();
+        $decoded = json_decode($row['setting_value'], true);
+        if (is_array($decoded) && count($decoded) > 0) {
+            $roles_map = $decoded;
+            $available_roles = array_keys($roles_map);
+        }
+    }
+    $stmt_roles->close();
 }
-ensure_role_schema($conn);
 
 // Handle user creation
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['create_user'])) {
     $username = trim($_POST['username']);
     $email = trim($_POST['email']);
-    $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
-    $role = $_POST['role'];
+    $password_raw = $_POST['password'];
+    $password = password_hash($password_raw, PASSWORD_DEFAULT);
+    $role = isset($_POST['role']) ? trim($_POST['role']) : '';
 
-    if (!empty($username) && !empty($email) && !empty($_POST['password']) && !empty($role)) {
-        $stmt = $conn->prepare("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)");
-        $stmt->bind_param("ssss", $username, $email, $password, $role);
-
-        if ($stmt->execute()) {
-            $success_message = "User created successfully!";
+    if (!empty($username) && !empty($email) && !empty($password_raw) && !empty($role)) {
+        // validate role against dynamic list
+        if (!in_array($role, $available_roles, true)) {
+            $error_message = "Invalid role selected.";
         } else {
-            $error_message = "Error: " . $stmt->error;
+            $stmt = $conn->prepare("INSERT INTO users (username, email, password, role, status) VALUES (?, ?, ?, ?, 'Active')");
+            if ($stmt) {
+                $stmt->bind_param("ssss", $username, $email, $password, $role);
+                if ($stmt->execute()) {
+                    $assigned_perms = isset($roles_map[$role]) && is_array($roles_map[$role]) ? $roles_map[$role] : [];
+                    $perm_list = implode(', ', $assigned_perms);
+                    $success_message = "User created successfully as $role.";
+                    if (!empty($perm_list)) $success_message .= " Permissions: " . $perm_list . ".";
+                } else {
+                    $error_message = "Error: " . $stmt->error;
+                }
+                $stmt->close();
+            } else {
+                $error_message = "Database error preparing statement.";
+            }
         }
-        $stmt->close();
     } else {
         $error_message = "All fields are required!";
     }
@@ -152,11 +170,10 @@ if ($result->num_rows > 0) {
 <input type="password" name="password" placeholder="Password" required>
 
 <select name="role" required>
-<option value="">Select Role</option>
-<option value="Owner">Owner</option>
-<!-- <option value="Manager">Manager</option> -->
-<option value="System Admin">Admin</option>
-<option value="Cashier">Cashier</option>
+    <option value="">Select Role</option>
+    <?php foreach ($available_roles as $r): ?>
+        <option value="<?php echo htmlspecialchars($r); ?>"><?php echo htmlspecialchars($r); ?></option>
+    <?php endforeach; ?>
 </select>
 
 <button type="submit" name="create_user">Add User</button>
