@@ -1,4 +1,16 @@
 <?php
+/*
+ * File: Admin/Transactions.php
+ * Purpose: View recent sales transactions and summary metrics.
+ * Key locations:
+ * - Bootstrap: `require_once __DIR__ . '/../includes/app.php';` at line 2
+ * - Access control: `require_roles(...)` at line 3
+ * - Direct DB connection: `new mysqli(...)` at line 6 (consider `app_connect()` for consistency)
+ * - Main queries for summaries and transactions around lines ~14-50.
+ * Known issues / improvements:
+ * - Use `app_connect()` to centralize schema and settings logic.
+ * - Consider paginating transactions instead of limiting to 200 in SQL.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 

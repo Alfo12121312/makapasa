@@ -1,4 +1,15 @@
 <?php
+/*
+ * File: Admin/sidebar.php
+ * Purpose: Render the left-hand admin navigation menu and helper `isActive()`.
+ * Key locations:
+ * - `isActive()` helper at line 6
+ * - Menu links reference many Admin pages (e.g., `Manage-Product.php`, `Inventory.php`, `Employees.php`).
+ * Usage / Call sites:
+ * - Included at top of admin pages via `render_sidebar()` helper in `includes/app.php`.
+ * Known notes / improvements:
+ * - Keep this file presentation-only; avoid embedding DB calls here.
+ */
 $current_page = basename($_SERVER['PHP_SELF']);
 
 function isActive($pages) {

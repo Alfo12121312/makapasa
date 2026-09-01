@@ -1,4 +1,14 @@
 <?php
+/*
+ * File: Admin/Purchasing.php
+ * Purpose: Create and manage purchase orders (POs) with supplier and status tracking.
+ * Key locations:
+ * - Uses `new mysqli(...)` at line 4; performs `ALTER TABLE` at runtime to add `expiration_date` when missing.
+ * - PO creation logic around lines ~20-40; status update around lines ~42-56.
+ * Known issues / improvements:
+ * - Move migrations (`ALTER TABLE`) out of runtime to a migration script.
+ * - Consider using `app_connect()` and centralizing DB logic.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 $conn = new mysqli("localhost", "root", "", "agrivet_db");

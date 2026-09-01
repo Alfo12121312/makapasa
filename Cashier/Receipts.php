@@ -1,4 +1,13 @@
 <?php
+/*
+ * File: Cashier/Receipts.php
+ * Purpose: Receipt lookup and reprint for the current cashier (select sale to view/print).
+ * Key locations:
+ * - Loads a recent sales list for the cashier and a detailed receipt when `sale_id` is provided
+ * - Protects access via `require_roles(['Cashier'])`
+ * Notes / Improvements:
+ * - Keep printing UI separate from API logic; this file is presentation-only.
+ */
 require_once __DIR__ . "/../includes/auth.php";
 require_once __DIR__ . "/../includes/app.php";
 

@@ -1,4 +1,14 @@
 <?php
+/*
+ * File: Admin/Categories2.php
+ * Purpose: Aggregated view of categories showing product counts, total stock, and sales per category.
+ * Key locations:
+ * - Uses `new mysqli(...)` at line 4 and runs aggregation queries (`$categorySql`, `$summarySql`) at lines ~8-22.
+ * Usage / Call sites:
+ * - Accessible from admin navigation: [Admin/sidebar.php](Admin/sidebar.php#L62)
+ * Known notes / improvements:
+ * - Consider using `app_connect()` and adding indexes on `inventory(category)` for performance.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 

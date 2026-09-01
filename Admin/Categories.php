@@ -1,4 +1,14 @@
 ﻿<?php
+/*
+ * File: Admin/Categories.php
+ * Purpose: Manage product categories (CRUD, status toggles) and aggregated category summaries.
+ * Key locations:
+ * - `require_once __DIR__ . '/../includes/app.php';` at line 2
+ * - `app_connect()` used at line 6 to obtain DB connection
+ * - Category insert/update logic using prepared statements starts at lines ~20-60.
+ * Known issues / improvements:
+ * - Good use of prepared statements; ensure client-side inputs are also validated/sanitized.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 

@@ -1,4 +1,15 @@
 <?php
+/*
+ * File: Admin/System-Settings.php
+ * Purpose: Configure global system settings (POS permissions and links to master data pages).
+ * Key locations:
+ * - Uses `app_connect()` for DB operations at line 6
+ * - Saves boolean settings into `system_settings` table in the POST handler around lines ~8-18
+ * Usage / Call sites:
+ * - Accessed from admin navigation and `includes/app.php` when rendering menus.
+ * Known notes / improvements:
+ * - Safe to keep as admin-only; consider validating `system_settings` keys against an allow-list before saving.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['Admin'], '../Login.php');
 

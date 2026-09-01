@@ -1,4 +1,14 @@
 <?php
+/*
+ * File: Owner/Dashboard-Owner.php
+ * Purpose: Read-only owner dashboard with high-level business KPIs (products, users, sales, low-stock).
+ * Key locations:
+ * - Includes auth and app bootstrap at top (lines ~2-4)
+ * - Direct DB connection using `new mysqli(...)` at line ~6 (consider `app_connect()` for consistency)
+ * - Queries for product counts, low stock, users, and today's sales around lines ~18-44
+ * Notes / Improvements:
+ * - Prefer `app_connect()` and centralize migrations; this file is read-only for owners.
+ */
 require_once __DIR__ . "/../includes/auth.php";
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['Owner'], '../Login.php');

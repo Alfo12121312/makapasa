@@ -1,4 +1,13 @@
 <?php
+/*
+ * File: Cashier/Transactions.php
+ * Purpose: Cashier-facing list of the cashier's own sales transactions.
+ * Key locations:
+ * - Loads transactions for the logged-in cashier using `auth_user_id()` and `app_connect()`
+ * - Renders via `render_sidebar('cashier', ...)` then a simple table UI
+ * Notes / Improvements:
+ * - Query limits to 300 rows; consider pagination for large datasets.
+ */
 require_once __DIR__ . "/../includes/auth.php";
 require_once __DIR__ . "/../includes/app.php";
 

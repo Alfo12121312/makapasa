@@ -1,4 +1,16 @@
 <?php
+/*
+ * File: api/process_sale.php
+ * Purpose: HTTP JSON endpoint to process a POS sale (checks shift, applies discounts, deducts FIFO stock, records sales).
+ * Key locations:
+ * - Uses `app_connect()` via `includes/app.php` at line ~6 for DB connection
+ * - Validates selected/automatic discounts near lines ~30-80
+ * - Performs FIFO batch deduction and inventory updates in the main loop (lines ~110-240)
+ * - Wraps DB operations in a transaction and commits/rolls back on error
+ * Notes / Improvements:
+ * - Good use of prepared statements; ensure `amount_received` and `change_amount` are validated when bound into the sale insert.
+ * - Consider limiting payload size and adding authentication/rate-limiting for public deployments.
+ */
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 

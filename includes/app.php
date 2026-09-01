@@ -1,4 +1,17 @@
 <?php
+/*
+ * File: includes/app.php
+ * Purpose: Central application bootstrap and shared helpers.
+ * - Exposes `app_connect()` to obtain a DB connection and ensure core/role schemas.
+ * - Provides inventory, discount and expiration helper functions used across the app.
+ * Known issues / improvements (locations below):
+ * - Schema creation/upgrades run at runtime; move to migration scripts to avoid overhead.
+ *   See: `function app_connect()` at line 14 and `function ensure_core_schema()` at line 26
+ *   (schema creation queries begin around line 28 and continue through line ~220).
+ * - Several queries use string SQL concatenation; prefer prepared statements where user data is used.
+ *   Examples: queries altering or inserting settings around lines 240-320 and some SHOW/ALTER checks.
+ * - Consider extracting small helper classes (DB, InventoryService) for testability.
+ */
 require_once __DIR__ . '/auth.php';
 
 function app_connect() {

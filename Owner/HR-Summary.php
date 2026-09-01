@@ -1,4 +1,13 @@
 <?php
+/*
+ * File: Owner/HR-Summary.php
+ * Purpose: Owner view for HR metrics and recent attendance logs.
+ * Key locations:
+ * - Direct DB connection via `new mysqli(...)` at line ~6 (replace with `app_connect()` for consistency)
+ * - Metrics queries for employee counts, present today, hours, and payroll estimate around lines ~20-40
+ * Notes:
+ * - Contains commented-out CREATE TABLE migration SQL — remove migrations from page-load in favor of centralized migrations.
+ */
 require_once __DIR__ . "/../includes/auth.php";
 require_roles(['Owner'], '../Login.php');
 require_once __DIR__ . "/../includes/app.php";

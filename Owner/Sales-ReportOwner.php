@@ -1,4 +1,14 @@
 <?php
+/*
+ * File: Owner/Sales-ReportOwner.php
+ * Purpose: Owner-facing sales report with same filters as admin report (date ranges, totals).
+ * Key locations:
+ * - Uses `new mysqli(...)` at line ~6 (consider `app_connect()`)
+ * - Adds `created_at` column auto-migration at line ~10
+ * - Prepared main query for sales between dates at lines ~28-40
+ * Notes:
+ * - Functionally mirrors `Admin/Sales-ReportAdmin.php` but scoped for `Owner` role.
+ */
 require_once __DIR__ . "/../includes/app.php";
 require_roles(['Owner'], 'Login.php');
 

@@ -1,4 +1,15 @@
 <?php
+/*
+ * File: Admin/Users.php
+ * Purpose: Manage user accounts (create, list, toggle status) and role-permission mapping.
+ * Key locations:
+ * - Bootstrap: `require_once __DIR__ . '/../includes/app.php';` at line 2
+ * - Access control: `require_roles(...)` at line 3
+ * - Uses central DB connection: `app_connect()` at line 8 (preferred over `new mysqli`).
+ * Known issues / improvements:
+ * - Good use of prepared statements for inserts/updates; ensure email uniqueness handling is explicit.
+ * - Consider adding rate-limiting and password strength validation on user creation (see create user logic around lines 20-60).
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['Admin'], '../Login.php');
 $user_role = auth_user_role();

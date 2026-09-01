@@ -1,4 +1,14 @@
 <?php
+/*
+ * File: Cashier/POS.php
+ * Purpose: Point-of-sale UI and session handling for cashiers. Loads products, active promotions, and exposes JS endpoints.
+ * Key locations:
+ * - Shift/session handling (start/end) at the top of the file
+ * - Discount loading and cashier-selectable promo fetch near lines ~40-80
+ * - JavaScript variables at the end expose `process_sale.php` and `inventory_snapshot.php` endpoints
+ * Notes / Improvements:
+ * - Keep heavy operations (stock validation, sale processing) in `api/process_sale.php` rather than the UI to keep transactions atomic.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['Cashier'], '../Login.php');
 

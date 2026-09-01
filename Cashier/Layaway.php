@@ -1,4 +1,13 @@
 <?php
+/*
+ * File: Cashier/Layaway.php
+ * Purpose: Cashier-facing interface to collect layaway payments when enabled in system settings.
+ * Key locations:
+ * - Uses `cashier_can_manage_layaway_payments()` to guard payment collection capability
+ * - Inserts into `layaway_payments` and updates layaway balances (lines ~8-30)
+ * Notes:
+ * - This page depends on settings from `System-Settings.php`; disabled for cashiers when not allowed.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['Cashier'], '../Login.php');
 

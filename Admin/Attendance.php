@@ -1,4 +1,16 @@
 <?php
+/*
+ * File: Admin/Attendance.php
+ * Purpose: Time-in / time-out attendance logging and retrieval.
+ * Key locations:
+ * - `require_once __DIR__ . '/../includes/app.php';` at line 2
+ * - DB connection via `new mysqli(...)` at line 6 (consider `app_connect()` instead)
+ * - Time-in insert logic at lines ~22-30; time-out update at lines ~34-46.
+ * - Prepared dynamic query building for filters starts at line ~60.
+ * Known issues / improvements:
+ * - Mixing direct mysqli and `app_connect()` across files; centralize connection use.
+ * - Consider rate-limiting or validation on time-in/time-out requests to prevent abuse.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 

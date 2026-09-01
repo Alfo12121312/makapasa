@@ -1,4 +1,15 @@
 <?php
+/*
+ * File: Admin/Suppliers2.php
+ * Purpose: Alternative supplier overview (aggregation by supplier field in inventory).
+ * Key locations:
+ * - Bootstrap: `require_once __DIR__ . '/../includes/app.php';` at line 2
+ * - Access control: `require_roles(...)` at line 3
+ * - Direct DB connection: `new mysqli(...)` at line 6 (prefer `app_connect()`)
+ * - Aggregation queries are defined at lines ~12-28.
+ * Known issues / improvements:
+ * - Use `app_connect()` for consistency and to ensure schema migrations are applied centrally.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 

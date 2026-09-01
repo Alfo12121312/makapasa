@@ -1,4 +1,11 @@
 <?php
+/*
+ * File: Owner/Shift-Report.php
+ * Purpose: Owner read-only view for cashier shift records filtered by month.
+ * Key locations:
+ * - Uses `app_connect()` and prepared statements to fetch `cashier_sessions` joined with `users` (lines ~6-18)
+ * - Exposes a filter for `month` via GET
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['Owner'], '../Login.php');
 

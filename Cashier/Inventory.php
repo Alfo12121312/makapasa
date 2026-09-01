@@ -1,4 +1,14 @@
 <?php
+/*
+ * File: Cashier/Inventory.php
+ * Purpose: Alternative inventory view used in cashier area; includes helpers for batch stock calculations and expiry checks.
+ * Key locations:
+ * - Uses a direct `new mysqli(...)` connection to `db_agrivet` on port 3307 at line ~12 (inconsistent)
+ * - Helper functions `get_product_stock_from_batches`, `get_near_expiry_batches`, and `get_expired_batches` provide batch-level insights
+ * Notes / Improvements:
+ * - Replace the hard-coded mysqli connection with `app_connect()` and standardize DB ports.
+ * - Avoid runtime `ALTER TABLE` operations on page load—use migrations.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 

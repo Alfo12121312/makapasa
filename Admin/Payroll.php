@@ -1,4 +1,16 @@
 <?php
+/*
+ * File: Admin/Payroll.php
+ * Purpose: Compute payroll for a selected period and persist payroll records.
+ * Key locations:
+ * - `require_once __DIR__ . '/../includes/app.php';` at line 2
+ * - `app_connect()` at line 4
+ * - Payroll SQL and prepared statement begin at lines ~8-40 (note binding of date ranges)
+ * - Insert/Upsert to `payroll_records` via `$saveStmt` at lines ~30-70
+ * Known issues / improvements:
+ * - Validate date inputs before using in queries; the code binds parameters correctly but ensure `month` is sanitized.
+ * - Consider moving heavy computation to a CLI batch job or background task for large staff counts.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 

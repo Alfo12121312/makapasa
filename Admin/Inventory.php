@@ -1,4 +1,17 @@
 <?php
+/*
+ * File: Admin/Inventory.php
+ * Purpose: Inventory management (stock in/out, stock adjustments, batch FIFO removal).
+ * Key locations:
+ * - `require_once __DIR__ . '/../includes/app.php';` at line 2 (bootstrap)
+ * - `process_auto_expiration($conn, auth_user_id());` at line 18 (auto expiration processing)
+ * - Direct DB connection created via `new mysqli(...)` at line 17 (consider `app_connect()` instead)
+ * - Stock out FIFO logic and raw queries around lines 140-240 (complex transactional logic).
+ * Known issues / improvements:
+ * - Use `app_connect()` to reuse centralized schema setup and settings.
+ * - The FIFO removal uses some unparameterized queries (e.g., selecting batches at line ~180) — prefer prepared statements.
+ * - Add transactional error handling and logging for the complex stock movement section (lines ~190-240).
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 $user_role = auth_user_role();

@@ -1,4 +1,16 @@
 ﻿<?php
+/*
+ * File: Admin/Suppliers.php
+ * Purpose: Manage supplier master data and summaries.
+ * Key locations:
+ * - Bootstrap: `require_once __DIR__ . '/../includes/app.php';` at line 2
+ * - Access control: `require_roles(...)` at line 3
+ * - Uses `app_connect()` at line 6 for DB connection
+ * - Table creation for `product_suppliers` begins around line 8 (consider moving migrations out of runtime)
+ * Known issues / improvements:
+ * - Table creation on page load should be moved to migrations; current code will run schema checks every request.
+ * - Validation for contact and email exists (`is_valid_contact_number`) but consider stronger email validation and XSS-safe outputs.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 

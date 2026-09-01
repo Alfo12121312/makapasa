@@ -1,4 +1,15 @@
 <?php
+/*
+ * File: Admin/test-toggle.php
+ * Purpose: Isolated testing UI to toggle inventory `status` for quick diagnostics.
+ * Key locations:
+ * - Connects via `new mysqli(...)` at line 3 and performs a simple prepared-select/update flow.
+ * - Dropdown loads last 10 products at lines ~40-60.
+ * Usage / Call sites:
+ * - Intended as a debugging/testing utility (referenced by Admin/DEBUGGING_GUIDE.md). Not used in production flows.
+ * Known notes:
+ * - Keep as a development/testing helper. Consider restricting access or removing in production.
+ */
 require_once __DIR__ . '/../includes/app.php';
 
 $conn = new mysqli("localhost", "root", "", "agrivet_db");

@@ -1,4 +1,11 @@
 <?php
+/*
+ * File: Owner/Layaway-Status.php
+ * Purpose: Owner read-only view of layaway records and payment totals.
+ * Key locations:
+ * - Uses `app_connect()` to query `layaways` and aggregated `layaway_payments` (lines ~6-12)
+ * - Renders a table of layaway status for owner review
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['Owner'], '../Login.php');
 

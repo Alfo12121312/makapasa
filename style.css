@@ -1,3 +1,12 @@
+/*
+ * File: style.css
+ * Purpose: Global styles for the admin, owner and cashier interfaces including layout, sidebar, tables and forms.
+ * Known issues / improvements (locations):
+ * - Duplicate rules exist in this file (several blocks repeated). Duplicate `*{` blocks found at lines 9 and 728.
+ *   Remove second occurrence (start around line 728) and consolidate shared rules.
+ * - Consider introducing CSS variables, a small utility layer, and responsive breakpoints for clarity.
+ * - Large file; split into smaller partials (layout, sidebar, forms, components) for maintainability.
+ */
 *{
 margin:0;
 padding:0;

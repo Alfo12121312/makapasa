@@ -1,4 +1,14 @@
 <?php
+/*
+ * File: Admin/test-diagnostic.php
+ * Purpose: Diagnostic page to inspect DB schema, sample data, session, and run simple update tests.
+ * Key locations:
+ * - Connects via `new mysqli(...)` at line 3 and runs multiple `SHOW` and sample queries for inventory.
+ * Usage / Call sites:
+ * - Referenced in `Admin/DEBUGGING_GUIDE.md` and intended for debugging only.
+ * Known notes:
+ * - Keep restricted to developers; the page runs write tests (UPDATE) and should not be exposed in production.
+ */
 require_once __DIR__ . '/../includes/app.php';
 
 $conn = new mysqli("localhost", "root", "", "agrivet_db");

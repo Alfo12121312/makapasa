@@ -1,4 +1,16 @@
 <?php
+/*
+ * File: Admin/Manage-Product.php
+ * Purpose: CRUD for product master data, categories and suppliers.
+ * Key locations:
+ * - `require_once __DIR__ . '/../includes/app.php';` at line 2 (bootstrap)
+ * - `session_start()` at line 7 (session usage for flash messages)
+ * - Direct DB connection via `new mysqli(...)` at line 10 (consider using `app_connect()` instead)
+ * - Product insert/update logic and prepared statements begin around lines 60-150.
+ * Known issues / improvements:
+ * - File creates tables at runtime (lines ~12-40); move to migrations.
+ * - Mixing `new mysqli` and `app_connect()` reduces consistency; centralize DB connection.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 

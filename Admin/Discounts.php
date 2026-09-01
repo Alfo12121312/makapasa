@@ -1,4 +1,15 @@
 <?php
+/*
+ * File: Admin/Discounts.php
+ * Purpose: Create and manage discount rules and promotions.
+ * Key locations:
+ * - `require_once __DIR__ . '/../includes/app.php';` at line 2
+ * - `app_connect()` at line 4
+ * - Discount save logic and prepared insert at lines ~8-30
+ * - Toggle discount uses string interpolation in query at line ~36 (use prepared statement to avoid potential injection if id is tampered).
+ * Known issues / improvements:
+ * - Replace `UPDATE discount_rules ... WHERE id = {$id}` with a prepared statement to avoid injection.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['Admin'], '../Login.php');
 

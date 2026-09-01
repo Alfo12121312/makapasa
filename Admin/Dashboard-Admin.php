@@ -1,4 +1,15 @@
 <?php
+/*
+ * File: Admin/Dashboard-Admin.php
+ * Purpose: Operations dashboard showing sales, inventory and HR metrics.
+ * Key locations:
+ * - `require_once __DIR__ . '/../includes/app.php';` at line 2 (bootstrap + helpers)
+ * - `require_roles(...)` at line 3 (access control)
+ * - Multiple direct `$conn->query(...)` health and stats queries throughout (examples start around line 22).
+ * Known issues / improvements:
+ * - Uses direct SQL queries concatenating variables for date ranges (lines ~60-90). Use prepared statements.
+ * - Heavy DB work on page load; consider caching or AJAX endpoints for charts (salesTrend, categoryTrend queries near lines ~110-160).
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 

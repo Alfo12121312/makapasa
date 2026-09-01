@@ -1,4 +1,13 @@
 <?php
+/*
+ * File: Owner/Reports.php
+ * Purpose: Simple navigation placeholder for owner-facing reports (links to Suppliers, Categories, Attendance).
+ * Key locations:
+ * - Includes `app.php` and access control at top
+ * - Currently creates a `new mysqli(...)` connection at line ~6 but does not use it — DB connection may be removed
+ * Notes / Improvements:
+ * - Remove unused DB connect and use `render_sidebar('owner', ...)` instead of admin sidebar.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['Owner'], '../Login.php');
 

@@ -1,11 +1,21 @@
 <?php
+/*
+ * File: Admin/Employees.php
+ * Purpose: Employee management and payroll-related operations.
+ * Key locations:
+ * - `require_once __DIR__ . '/../includes/app.php';` at line 2
+ * - `new mysqli(...)` DB connection at line 5 (use `app_connect()` instead)
+ * - Attendance/payroll queries and inserts/updates appear throughout; watch for direct `->query()` usage.
+ * Known issues / improvements:
+ * - Use centralized DB connection and migrations for schema updates.
+ * - Protect user input via prepared statements; sanitize and validate inputs before DB writes.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 
 $conn = new mysqli("localhost", "root", "", "agrivet_db");
 if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
-
 }
 
 /* $conn->query("CREATE TABLE IF NOT EXISTS employees (

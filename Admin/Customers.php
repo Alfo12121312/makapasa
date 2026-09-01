@@ -1,4 +1,21 @@
 <?php
+/*
+ * File: Admin/Customers.php
+ * Purpose: Customer management (list, add, edit customers).
+ * Key locations:
+ * - `require_once __DIR__ . '/../includes/app.php';` at line 2
+ * - `new mysqli(...)` DB connection at line 5 (consider `app_connect()` for consistency)
+ * - CRUD SQL queries are used directly via `$conn->query()` and prepared statements later in the file (search for `->query(` and `prepare(`).
+ * Usage / Call sites:
+ * - Linked in admin navigation: `Admin/sidebar.php` (render call at [Admin/sidebar.php](Admin/sidebar.php#L62))
+ * - Linked in global sidebar: `sidebar.php` (menu entry at [sidebar.php](sidebar.php#L76))
+ * - Included in top-level app menu: `includes/app.php` (menu entry near [includes/app.php](includes/app.php#L594))
+ * - Referenced by `Admin/Layaway.php` when instructing to add a customer (see [Admin/Layaway.php](Admin/Layaway.php#L129)).
+ * - Conclusion: This file is actively used by the application's navigation and other pages (NOT unused).
+ * Known issues / improvements:
+ * - Centralize DB connection and error handling via `app_connect()`.
+ * - Ensure all user-supplied data uses prepared statements (some `$conn->query()` calls may use concatenation).
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 

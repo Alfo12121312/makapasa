@@ -1,4 +1,14 @@
 <?php
+/*
+ * File: sidebar.php
+ * Purpose: Render the left navigation sidebar for admin area.
+ * - Uses `auth_user_role()` and `is_system_admin()` to show role-appropriate links.
+ * Known issues / improvements (locations):
+ * - Role/title logic and direct echoing: `auth_user_role()` used in the title at line 22.
+ * - Helper `isActive()` function is defined at line 12; consider centralizing active-link logic.
+ * - Assumes directory structure; path building can be brittle—use a central URL helper.
+ * - Consider extracting rendering to a function returning HTML for easier testing.
+ */
 $current_page = basename($_SERVER['PHP_SELF']);
 
 function isActive($pages) {

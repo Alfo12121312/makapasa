@@ -1,4 +1,17 @@
 <?php
+/*
+ * File: Admin/Sales-ReportAdmin.php
+ * Purpose: Produce sales reports filtered by date ranges (today, week, month, custom) and show totals.
+ * Key locations:
+ * - Uses `new mysqli(...)` at line 3 (consider `app_connect()` to centralize DB setup and migrations)
+ * - Auto-migration adding `created_at` column near line 7
+ * - Prepared statement for main query between lines ~20-36
+ * Usage / Call sites:
+ * - Available in admin navigation: [Admin/sidebar.php](Admin/sidebar.php#L62)
+ * Known issues / improvements:
+ * - Move schema migrations out of runtime.
+ * - Consider caching or pagination for large result sets.
+ */
 require_once __DIR__ . "/../includes/app.php";
 require_roles(['Admin'], 'Login.php');
 

@@ -1,4 +1,11 @@
 <?php
+/*
+ * File: Cashier/Attendance.php
+ * Purpose: Cashier-station attendance logging UI (time-in/time-out) and recent logs.
+ * Key locations:
+ * - Uses `app_connect()` and prepared statements for time-in / time-out operations
+ * - Provides a recent logs report limited to 200 rows
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['Cashier'], '../Login.php');
 

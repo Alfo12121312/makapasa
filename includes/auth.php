@@ -1,5 +1,14 @@
 <?php
-
+/*
+ * File: includes/auth.php
+ * Purpose: Session and authorization helpers.
+ * - Normalizes roles, exposes `auth_user_*` helpers, permission utilities, and role-schema adjustments.
+ * Known issues / improvements (locations):
+ * - Calls `app_connect()` from helpers (can create DB connection during permission checks); prefer passing a connection.
+ *   See: `can_manage_store()` at line 55 which calls `app_connect()` at line 59.
+ * - Permission storage is JSON in `system_settings` — consider a normalized DB table for complex permission queries.
+ *   See: `get_roles_permissions()` at line 90 and `get_role_permissions()` at line ~104.
+ */
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }

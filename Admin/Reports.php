@@ -1,4 +1,15 @@
 <?php
+/*
+ * File: Admin/Reports.php
+ * Purpose: Navigation hub for admin reports (links to Suppliers, Categories, Transactions, Attendance).
+ * Key locations:
+ * - Bootstrap: `require_once __DIR__ . '/../includes/app.php';` at top
+ * - Uses `new mysqli(...)` at line 6 but no DB queries are performed in this file (DB connection appears unused here)
+ * Usage / Call sites:
+ * - Linked via admin navigation: [Admin/sidebar.php](Admin/sidebar.php#L62)
+ * Known notes:
+ * - The DB connection `$conn` is created but not used — this file likely does not need a DB connection and can remove it.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['Owner'], '../Login.php');
 

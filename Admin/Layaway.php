@@ -1,4 +1,18 @@
 <?php
+/*
+ * File: Admin/Layaway.php
+ * Purpose: Manage layaway reservations, payments, and stock reservations.
+ * Key locations:
+ * - Uses `app_connect()` at line 6 for DB connection and transactional operations.
+ * - Layaway creation flow (select product, reserve stock, insert layaway, insert layaway items) around lines ~6-60.
+ * - Payment handling and balance update logic around lines ~60-120 (mixes prepared statements and direct queries).
+ * Usage / Call sites:
+ * - Linked from admin navigation: [Admin/sidebar.php](Admin/sidebar.php#L62)
+ * - References `Customers.php` for customer selection: see [Admin/Layaway.php](Admin/Layaway.php#L129).
+ * Known issues / improvements:
+ * - Avoid mixing prepared statements and interpolated queries; replace interpolation in balance updates with prepared statements to prevent SQL errors and injection.
+ * - Add validation on inputs (amounts and quantities) and error messages for UX.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['Admin'], '../Login.php');
 

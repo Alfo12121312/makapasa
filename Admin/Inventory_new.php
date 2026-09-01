@@ -1,4 +1,19 @@
 <?php
+/*
+ * File: Admin/Inventory_new.php
+ * Purpose: Inventory management with batch-level stock movements (FIFO), stock in/out, and inventory type handling.
+ * Key locations:
+ * - Bootstrap and access control: `require_once __DIR__ . '/../includes/app.php';` and `require_roles(...)` at top of file
+ * - Calls `process_auto_expiration($conn, auth_user_id())` at line ~12 to auto-handle expired batches
+ * - Uses `new mysqli(...)` for DB connection at line ~8 (prefer `app_connect()` for consistency)
+ * - Stock in/out and FIFO removal logic around lines ~60-190 (complex transactional code)
+ * Usage / Call sites:
+ * - Linked from admin sidebar: [Admin/sidebar.php](Admin/sidebar.php#L62)
+ * Known issues / improvements:
+ * - Move schema changes (`ALTER TABLE`) to a migration script instead of runtime.
+ * - Replace `new mysqli` with `app_connect()` to centralize connection and settings.
+ * - Add stronger error handling and logging around transactions (use exceptions and detailed rollbacks).
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 $user_role = auth_user_role();

@@ -1,3 +1,13 @@
+/*
+ * File: script.js
+ * Purpose: Client-side UI helpers for POS and admin interfaces.
+ * - Handles cart manipulation, discounts, UI modals, filtering, and inventory snapshot sync.
+ * Known issues / improvements (locations):
+ * - Large monolithic file; split POS logic, utilities, and DOM rendering for maintainability.
+ * - Some global variables may cause collisions; inspect `let cart = []` at line 70 and globals near lines 1-90.
+ * - Discount option loading and state live in `window.cashierSelectableDiscounts` around lines 81-82 and network loading at lines 445,452-458.
+ * - Network/error handling and user feedback are minimal; see `confirmTransaction()` and fetch handling around lines 520-580.
+ */
 function togglePassword() {
     const passwordInput = document.getElementById('passID');
     if (!passwordInput) return;

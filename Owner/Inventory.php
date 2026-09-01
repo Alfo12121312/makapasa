@@ -1,4 +1,14 @@
 <?php
+/*
+ * File: Owner/Inventory.php
+ * Purpose: Read-only inventory list and filters for Owner role.
+ * Key locations:
+ * - Auth and app bootstrap at top
+ * - Direct DB connection `new mysqli(...)` at line ~6 (note: uses port 3307)
+ * - Main inventory query at lines ~16-24 and filter lists for categories/suppliers at lines ~26-30
+ * Notes / Improvements:
+ * - Replace hard-coded mysqli with `app_connect()`; ensure owner view remains read-only.
+ */
 require_once __DIR__ . "/../includes/auth.php";
 require_roles(['Owner'], '../Login.php');
 require_once __DIR__ . '/../includes/app.php';

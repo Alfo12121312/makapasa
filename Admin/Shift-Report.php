@@ -1,4 +1,13 @@
 <?php
+/*
+ * File: Admin/Shift-Report.php
+ * Purpose: Display cashier session/shift summaries with filters for date range and cashier.
+ * Key locations:
+ * - Uses `app_connect()` at line 3 to run prepared queries for sessions and cashier list.
+ * - Query building and prepared statement binding around lines ~9-34.
+ * Known issues / improvements:
+ * - Ensure indexes exist on `cashier_sessions(session_date, cashier_id)` to improve filter performance.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['Admin'], '../Login.php');
 

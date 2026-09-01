@@ -1,4 +1,14 @@
 <?php
+/*
+ * File: Admin/Expenses.php
+ * Purpose: Record and list operating expenses with monthly summaries.
+ * Key locations:
+ * - `require_once __DIR__ . '/../includes/app.php';` at line 2
+ * - `app_connect()` at line 4
+ * - Prepared statements used for inserts and queries around lines ~8-40.
+ * Known issues / improvements:
+ * - Ensure `amount` and date inputs are validated server-side (they are cast but consider stricter validation).
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['Admin'], '../Login.php');
 

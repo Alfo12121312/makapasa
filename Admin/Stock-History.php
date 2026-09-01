@@ -1,4 +1,16 @@
 <?php
+/*
+ * File: Admin/Stock-History.php
+ * Purpose: Provide stock movement history and AJAX endpoint for filtered history retrieval.
+ * Key locations:
+ * - Bootstrap: `require_once __DIR__ . '/../includes/app.php';` at line 2
+ * - Access control: `require_roles(...)` at line 3
+ * - `app_connect()` at line 6
+ * - AJAX GET handler for `action=get_stock_history` begins at line ~10 and builds dynamic prepared statements.
+ * Known issues / improvements:
+ * - Good use of prepared statements for filter params; ensure inputs are validated (dates, product names) before binding.
+ * - Consider rate-limiting the AJAX endpoint if exposed publicly.
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager', 'Owner'], '../Login.php');
 

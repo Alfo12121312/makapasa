@@ -1,4 +1,11 @@
 <?php
+/*
+ * File: Cashier/Shift-Records.php
+ * Purpose: Displays the logged-in cashier's historical shift records (opening/closing cash, sales per shift).
+ * Key locations:
+ * - Uses `app_connect()` to query `cashier_sessions` filtered by `auth_user_id()`
+ * - Simple presentation table limited by query results
+ */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['Cashier'], '../Login.php');
 
