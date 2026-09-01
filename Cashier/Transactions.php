@@ -4,12 +4,8 @@ require_once __DIR__ . "/../includes/app.php";
 
 require_roles(['Cashier'], '../Login.php');
 
-$conn = new mysqli("localhost", "root", "", "db_agrivet", 3307);
-render_sidebar('child', $_SERVER['PHP_SELF'], 'Agrivet Cashier');
-
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
+$conn = app_connect();
+render_sidebar('cashier', 'Transactions.php', 'Cashier');
 
 $cashier_id = auth_user_id();
 $transactions = $conn->query("SELECT s.id, s.created_at, i.product_name, s.quantity, s.unit_price, s.discount, s.total_price

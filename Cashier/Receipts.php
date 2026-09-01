@@ -4,17 +4,13 @@ require_once __DIR__ . "/../includes/app.php";
 
 require_roles(['Cashier'], '../Login.php');
 
-$conn = new mysqli("localhost", "root", "", "db_agrivet", 3307);
-render_sidebar('child', $_SERVER['PHP_SELF'], 'Agrivet Cashier');
-
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
+$conn = app_connect();
+render_sidebar('cashier', 'Receipts.php', 'Cashier');
 
 $cashier_id = auth_user_id();
 $selected_id = isset($_GET['sale_id']) ? (int)$_GET['sale_id'] : 0;
 
-$list = $conn->query("SELECT id, created_at, total_price
+$list = $conn->query("SELECT id, created_at, total_price, sale_reference, product_id
                       FROM sales
                       WHERE cashier_id = " . $cashier_id . "
                       ORDER BY created_at DESC

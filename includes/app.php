@@ -565,7 +565,7 @@ function render_sidebar($context, $activePage, $title = null) {
             ' Inventory' => [
                 ['label' => ' Products', 'href' => $adminBase . 'Manage-Product.php'],
                 ['label' => ' Stock', 'href' => $adminBase . 'Inventory.php'],
-                ['label' => ' Expiration', 'href' => $adminBase . 'Expiration-Management.php'],
+                // hide ['label' => ' Expiration', 'href' => $adminBase . 'Expiration-Management.php'],
                 ['label' => ' Categories', 'href' => $adminBase . 'Categories.php']
             ],
             ' Customers' => [

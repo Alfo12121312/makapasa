@@ -1,6 +1,6 @@
 -- CAPS-FI Database Recovery Script
--- Complete validated database schema for agrivet_db
--- Generated: 2026-05-25
+-- Complete schema for agrivet_db aligned with the current PHP application
+-- Run this in MySQL/MariaDB to recreate or repair the database structure.
 
 CREATE DATABASE IF NOT EXISTS agrivet_db;
 USE agrivet_db;
@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
     role VARCHAR(30) NOT NULL,
     status ENUM('Active', 'Inactive') DEFAULT 'Active',
     date_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS system_settings (
@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS employees (
     pay_type ENUM('Daily','Monthly') NOT NULL DEFAULT 'Monthly',
     monthly_salary DECIMAL(12,2) NOT NULL DEFAULT 0,
     daily_rate DECIMAL(12,2) NOT NULL DEFAULT 0,
+    contribution_type VARCHAR(50) NULL,
+    contribution_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
     status ENUM('Active','Inactive') DEFAULT 'Active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -43,6 +45,32 @@ CREATE TABLE IF NOT EXISTS attendance (
     total_hours DECIMAL(8,2) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_employee_day (employee_id, attendance_date)
+);
+
+CREATE TABLE IF NOT EXISTS cash_advances (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    employee_id INT NOT NULL,
+    advance_date DATE NOT NULL,
+    amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+    remaining_balance DECIMAL(12,2) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS payroll_records (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    employee_id INT NOT NULL,
+    period_start DATE NOT NULL,
+    period_end DATE NOT NULL,
+    cutoff ENUM('first','second') NOT NULL DEFAULT 'second',
+    gross_salary DECIMAL(12,2) NOT NULL DEFAULT 0,
+    late_deduction DECIMAL(12,2) NOT NULL DEFAULT 0,
+    employee_statutory_deduction DECIMAL(12,2) NOT NULL DEFAULT 0,
+    company_statutory_expense DECIMAL(12,2) NOT NULL DEFAULT 0,
+    cash_advance_deduction DECIMAL(12,2) NOT NULL DEFAULT 0,
+    total_deductions DECIMAL(12,2) NOT NULL DEFAULT 0,
+    net_salary DECIMAL(12,2) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_payroll_period (employee_id, period_start, period_end, cutoff)
 );
 
 CREATE TABLE IF NOT EXISTS cashier_sessions (
@@ -114,19 +142,20 @@ CREATE TABLE IF NOT EXISTS inventory (
     supplier VARCHAR(120) DEFAULT NULL,
     product_unit VARCHAR(20) NOT NULL,
     price DECIMAL(12,2) NOT NULL DEFAULT 0,
+    cost_price DECIMAL(12,2) NOT NULL DEFAULT 0,
     expiration_date DATE NULL,
-    status ENUM('Active','Hidden') NOT NULL DEFAULT 'Active',
+    status ENUM('Active','Inactive','Hidden') NOT NULL DEFAULT 'Active',
     inventory_type VARCHAR(20) NOT NULL DEFAULT 'Display',
     product_code VARCHAR(100) DEFAULT NULL,
     date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- **CRITICAL: This table was missing from your schema**
 CREATE TABLE IF NOT EXISTS stock_movements (
     id INT AUTO_INCREMENT PRIMARY KEY,
     product_id INT NOT NULL,
     movement_type ENUM('IN','OUT') NOT NULL,
     quantity INT NOT NULL DEFAULT 0,
+    cost_price DECIMAL(12,2) NOT NULL DEFAULT 0,
     expiration_date DATE NULL,
     batch_reference VARCHAR(100) DEFAULT NULL,
     notes TEXT NULL,
@@ -208,6 +237,13 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
     item_name VARCHAR(120) NOT NULL,
     quantity DECIMAL(10,2) NOT NULL DEFAULT 0,
     unit_cost DECIMAL(12,2) NOT NULL DEFAULT 0,
+    expiration_date DATE NULL,
     status ENUM('Pending','Ordered','Received') DEFAULT 'Pending',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+INSERT INTO system_settings (setting_key, setting_value)
+VALUES
+    ('cashier_can_apply_discounts', '0'),
+    ('cashier_can_manage_layaway_payments', '1')
+ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value);

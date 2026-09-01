@@ -38,8 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['start_day'])) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['end_day'])) {
     $closingCash = max(0, (float)$_POST['closing_cash']);
-    $cashIn = max(0, (float)$_POST['cash_in']);
-    $cashOut = max(0, (float)$_POST['cash_out']);
+
 
     $stmt = $conn->prepare("UPDATE cashier_sessions
                             SET cash_in = ?, cash_out = ?, closing_cash = ?, status = 'Closed', closed_at = NOW()
@@ -108,18 +107,25 @@ $activeCategory = $categories[0] ?? '';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>POS</title>
+    <title>Point of Sale · MakaPasa</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../style.css">
 </head>
 <body>
 <?php render_sidebar('cashier', 'POS.php', 'Cashier'); ?>
 <div class="userAdmin pos-page">
-    <div class="page-header">
-        <div>
-            <h1>Point of Sale</h1>
+
+    <div class="pos-topbar">
+        <div class="pos-topbar-text">
+            <span class="pos-eyebrow">Cashier &middot; Point of Sale</span>
+            <h1>Checkout Counter</h1>
             <p>Live inventory deduction, shift tracking, and promotion-aware checkout.</p>
         </div>
-        <span class="chip"><?php echo $sessionOpen ? 'Shift Open' : 'Shift Closed'; ?></span>
+        <span class="pos-shift-chip <?php echo $sessionOpen ? 'is-open' : 'is-closed'; ?>">
+            <span class="pos-shift-dot"></span><?php echo $sessionOpen ? 'Shift Open' : 'Shift Closed'; ?>
+        </span>
     </div>
 
     <?php if ($successMessage): ?><div class="message success"><?php echo htmlspecialchars($successMessage); ?></div><?php endif; ?>
@@ -127,15 +133,16 @@ $activeCategory = $categories[0] ?? '';
     <div id="pos-feedback" class="message" style="display:none;"></div>
 
     <?php if (!$sessionOpen): ?>
-    <div class="form-container">
+    <div class="form-container pos-start-shift">
         <h2>Start Shift</h2>
+        <p class="pos-start-hint">Enter the cash you're starting the drawer with to open the register.</p>
         <form method="post">
             <input type="number" step="0.01" min="0" name="opening_cash" placeholder="Opening Cash" required>
             <button type="submit" name="start_day">Start Shift</button>
         </form>
     </div>
     <?php else: ?>
-    <div class="stats-grid">
+    <div class="stats-grid pos-stats">
         <div class="stat-card"><div class="label">Started</div><div class="value"><?php echo date('h:i A', strtotime($session['started_at'])); ?></div></div>
         <div class="stat-card"><div class="label">Opening Cash</div><div class="value">PHP <?php echo number_format((float)$session['opening_cash'], 2); ?></div></div>
         <div class="stat-card"><div class="label">Shift Sales</div><div class="value" id="shift-sales-value">PHP <?php echo number_format((float)$session['total_sales'], 2); ?></div></div>
@@ -145,7 +152,9 @@ $activeCategory = $categories[0] ?? '';
         <div class="products-section">
             <div class="pos-toolbar">
                 <h2>Products</h2>
-                <input type="text" id="pos-search" placeholder="Search products..." onkeyup="filterPosProducts()">
+                <div class="pos-search">
+                    <input type="text" id="pos-search" placeholder="Search products..." onkeyup="filterPosProducts()">
+                </div>
             </div>
             <?php if (!empty($discountRules)): ?>
                 <div class="promo-banner">
@@ -168,55 +177,55 @@ $activeCategory = $categories[0] ?? '';
                          data-category="<?php echo htmlspecialchars($product['category']); ?>"
                          data-stock="<?php echo (int)$product['stock_quantity']; ?>"
                          <?php echo $product['category'] !== $activeCategory ? 'style="display:none;"' : ''; ?>>
+                        <div class="product-card-top">
+                            <span class="product-stock-tag"><span class="live-stock"><?php echo (int)$product['stock_quantity']; ?></span> <?php echo htmlspecialchars($product['product_unit']); ?> left</span>
+                        </div>
                         <h3><?php echo htmlspecialchars($product['product_name']); ?></h3>
-                        <p>Unit: <?php echo htmlspecialchars($product['product_unit']); ?></p>
-                        <p class="product-price">PHP <?php echo number_format((float)$product['price'], 2); ?></p>
-                        <p class="small-text">Stock: <span class="live-stock"><?php echo (int)$product['stock_quantity']; ?></span></p>
-                        <button type="button" onclick="addToCart(<?php echo (int)$product['id']; ?>, '<?php echo addslashes($product['product_name']); ?>', <?php echo (float)$product['price']; ?>, '<?php echo addslashes($product['product_unit']); ?>')">Add</button>
+                        <p class="product-unit-line">Sold per <?php echo htmlspecialchars($product['product_unit']); ?></p>
+                        <div class="product-card-bottom">
+                            <p class="product-price">PHP <?php echo number_format((float)$product['price'], 2); ?></p>
+                            <button type="button" class="btn-add" onclick="addToCart(<?php echo (int)$product['id']; ?>, '<?php echo addslashes($product['product_name']); ?>', <?php echo (float)$product['price']; ?>, '<?php echo addslashes($product['product_unit']); ?>')">+ Add</button>
+                        </div>
                     </div>
                 <?php endforeach; ?>
             </div>
         </div>
 
         <div class="cart-section checkout-sidebar">
-            <h2>Checkout</h2>
-            <div id="cart-items"></div>
-            <div class="discount-section">
-                <h3>Sale Type</h3>
-                <label><input type="radio" name="sale_type" value="Retail" checked onchange="updateSaleType()"> Retail</label>
-                <label><input type="radio" name="sale_type" value="Wholesale" onchange="updateSaleType()"> Wholesale</label>
+            <div class="cart-header">
+                <h2>Current Order</h2>
+                <span class="cart-count-badge" id="cart-count-badge">0 items</span>
             </div>
-            
-            <?php if (!empty($cashierDiscounts)): ?>
-            <div class="discount-options-section">
-                <h3>Apply Discount</h3>
-                <label><input type="radio" name="selected_discount" value="" checked onchange="updateSelectedDiscount()"> No Discount</label>
-                <?php foreach ($cashierDiscounts as $discount): ?>
-                    <label>
-                        <input type="radio" name="selected_discount" value="<?php echo (int)$discount['id']; ?>" onchange="updateSelectedDiscount()"> 
-                        <?php echo htmlspecialchars($discount['name']); ?>
-                        (<?php echo $discount['discount_type'] === 'percentage' 
-                            ? number_format((float)$discount['discount_value'], 2) . '%' 
-                            : 'PHP ' . number_format((float)$discount['discount_value'], 2); ?>,
-                        <?php echo ($discount['scope'] ?? 'order') === 'product' ? 'product only' : 'order-wide'; ?>
-                        <?php $minQty = isset($discount['min_qty']) ? (int)$discount['min_qty'] : 1; echo ($minQty > 1) ? 'min ' . $minQty . ' items' : ''; ?>)
-                    </label>
-                <?php endforeach; ?>
-            </div>
-            <?php endif; ?>
 
-            <p class="small-text">Cashier manual discounts: <strong><?php echo $canManualDiscount ? 'Enabled' : 'Disabled'; ?></strong></p>
+            <div id="cart-items" class="cart-items-scroll"></div>
+            <div class="cart-empty-state" id="cart-empty-state">
+                <p>No items yet</p>
+                <span>Tap a product to add it to this order.</span>
+            </div>
+
+            <div class="discount-section pos-segment">
+                <h3>Sale Type</h3>
+                <div class="segment-group">
+                    <label class="segment-option"><input type="radio" name="sale_type" value="Retail" checked onchange="updateSaleType()"><span>Retail</span></label>
+                    <label class="segment-option"><input type="radio" name="sale_type" value="Wholesale" onchange="updateSaleType()"><span>Wholesale</span></label>
+                </div>
+            </div>
+
+            <div class="discount-options-section pos-segment">
+                <h3>Apply Discount</h3>
+                <div id="discount-options-container" class="segment-group segment-group-vertical"></div>
+            </div>
+
+            <p class="small-text pos-permission-note">Manual per-item discount: <strong><?php echo $canManualDiscount ? 'Enabled' : 'Disabled'; ?></strong></p>
+
             <div class="checkout-summary">
                 <div class="summary-row"><span>Subtotal</span><span id="subtotal">PHP 0.00</span></div>
-                <div class="summary-row"><span>Discount</span><span id="total-discount">PHP 0.00</span></div>
+                <div class="summary-row summary-discount-row" id="discount-row"><span>Discount</span><span id="total-discount">PHP 0.00</span></div>
                 <div class="summary-row total-row"><span>Total</span><span id="cart-total">PHP 0.00</span></div>
             </div>
             <div class="cart-buttons">
                 <button type="button" onclick="cancelOrder()" class="btn-cancel">Cancel Order</button>
                 <button type="button" onclick="proceedOrder()" id="proceed-btn" class="btn-confirm" disabled>Pay</button>
-                <!--no functions yet-->
-                <button type="button" onclick="cancelOrder()" class="btn-cancel">Cash In</button>
-                <button type="button" onclick="cancelOrder()" class="btn-cancel">Cash Out</button>
             </div>
         </div>
     </div>
@@ -233,11 +242,9 @@ $activeCategory = $categories[0] ?? '';
         </div>
     </div>
 
-    <div class="form-container">
+    <div class="form-container pos-end-shift">
         <h2>End Shift</h2>
         <form method="post">
-            <input type="number" step="0.01" min="0" name="cash_in" placeholder="Cash In">
-            <input type="number" step="0.01" min="0" name="cash_out" placeholder="Cash Out">
             <input type="number" step="0.01" min="0" name="closing_cash" placeholder="Closing Cash" required>
             <button type="submit" name="end_day">End Shift</button>
         </form>
@@ -246,11 +253,12 @@ $activeCategory = $categories[0] ?? '';
 </div>
 
 <script>
-const sessionOpen = <?php echo $sessionOpen ? 'true' : 'false'; ?>;
-const cashierCanApplyDiscounts = <?php echo $canManualDiscount ? 'true' : 'false'; ?>;
-const activeDiscountRules = <?php echo json_encode($discountRules); ?>;
-const cashierSelectableDiscounts = <?php echo json_encode($cashierDiscounts); ?>;
-const inventorySnapshotUrl = '../api/inventory_snapshot.php';
+window.sessionOpen = <?php echo $sessionOpen ? 'true' : 'false'; ?>;
+window.cashierCanApplyDiscounts = <?php echo $canManualDiscount ? 'true' : 'false'; ?>;
+window.activeDiscountRules = <?php echo json_encode($discountRules); ?>;
+window.cashierSelectableDiscounts = <?php echo json_encode($cashierDiscounts); ?>;
+window.inventorySnapshotUrl = '../api/inventory_snapshot.php';
+window.discountOptionsUrl = '../api/discount_options.php';
 window.processSaleUrl = '../api/process_sale.php';
 </script>
 <script src="../script.js"></script>
