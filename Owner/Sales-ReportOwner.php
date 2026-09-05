@@ -12,10 +12,7 @@
 require_once __DIR__ . "/../includes/app.php";
 require_roles(['Owner'], 'Login.php');
 
-$conn = new mysqli("localhost", "root", "", "db_agrivet", 3307);
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
+$conn = app_connect();
 // AUTO-MIGRATION
 $checkCreatedAt = $conn->query("SHOW COLUMNS FROM sales LIKE 'created_at'");
 if ($checkCreatedAt && $checkCreatedAt->num_rows === 0) {

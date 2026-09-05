@@ -16,10 +16,7 @@ $user_role  = auth_user_role();
 $can_edit   = true;
 $can_toggle = true;
 
-$conn = new mysqli("localhost", "root", "", "db_agrivet", 3307);
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
+$conn = app_connect();
 
 // Auto process expired batches into stock-out movements
 process_auto_expiration($conn, auth_user_id());
