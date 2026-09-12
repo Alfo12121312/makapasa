@@ -72,10 +72,70 @@ if ($selectedDiscountId > 0) {
 
 // Load active automatic discount rules for fallback (auto promos)
 $activeDiscountRules = fetch_active_discount_rules($conn);
+$orderSubtotal = 0.0;
+foreach ($cart as $citem) {
+    $orderSubtotal += (float)($citem['price'] ?? 0) * (int)($citem['quantity'] ?? 0);
+}
+
+// Precompute proportional allocation for fixed, order-scoped selected discount
+$perUnitDiscounts = []; // index => per-unit discount (rounded to cents)
+if ($appliedDiscount && ($appliedDiscount['discount_type'] ?? '') === 'fixed' && (($appliedDiscount['scope'] ?? 'order') === 'order')) {
+    $requiredQty = (int)($appliedDiscount['min_qty'] ?? 1) ?: 1;
+    if ($cartTotalQuantity >= $requiredQty) {
+        $fixed = (float)$appliedDiscount['discount_value'];
+        $itemSubtotals = [];
+        $exactTotals = [];
+        foreach ($cart as $idx => $citem) {
+            $qty = (int)($citem['quantity'] ?? 0);
+            $price = (float)($citem['price'] ?? 0);
+            $sub = $price * $qty;
+            $itemSubtotals[$idx] = $sub;
+            if ($orderSubtotal > 0) {
+                $exactTotals[$idx] = $fixed * ($sub / $orderSubtotal);
+            } else {
+                $perUnitFallback = $cartTotalQuantity > 0 ? ($fixed / $cartTotalQuantity) : 0.0;
+                $exactTotals[$idx] = $perUnitFallback * $qty;
+            }
+            // cap per-item total to not exceed subtotal
+            if ($exactTotals[$idx] > $sub) $exactTotals[$idx] = $sub;
+        }
+
+        // Round to cents and fix rounding remainder by assigning to largest subtotal
+        $roundedTotals = [];
+        $roundedSum = 0.0;
+        foreach ($exactTotals as $idx => $val) {
+            $r = round($val, 2);
+            $roundedTotals[$idx] = $r;
+            $roundedSum += $r;
+        }
+        $roundedSum = round($roundedSum, 2);
+        $remainder = round($fixed - $roundedSum, 2);
+        if (abs($remainder) >= 0.01) {
+            // find index with largest subtotal
+            $maxIdx = null; $maxSub = -1;
+            foreach ($itemSubtotals as $idx => $sub) {
+                if ($sub > $maxSub) { $maxSub = $sub; $maxIdx = $idx; }
+            }
+            if ($maxIdx !== null) {
+                $roundedTotals[$maxIdx] = round($roundedTotals[$maxIdx] + $remainder, 2);
+            }
+        }
+
+        // Convert to per-unit discounts
+        foreach ($roundedTotals as $idx => $tot) {
+            $qty = max(1, (int)($cart[$idx]['quantity'] ?? 1));
+            $perUnit = round($tot / $qty, 2);
+            // cap at unit price
+            $unitPrice = (float)($cart[$idx]['price'] ?? 0);
+            if ($perUnit > $unitPrice) $perUnit = $unitPrice;
+            $perUnitDiscounts[$idx] = $perUnit;
+        }
+    }
+}
 
 $conn->begin_transaction();
 try {
-    foreach ($cart as $item) {
+    foreach ($cart as $index => $item) {
         $productId = (int)$item['id'];
         $quantity = (int)$item['quantity'];
         $unitPrice = (float)$item['price'];
@@ -90,11 +150,21 @@ try {
 
             if ($discountAppliesToProduct && $ruleQty >= $requiredQty) {
                 if ($appliedDiscount['discount_type'] === 'percentage') {
-                    $discount = $unitPrice * ((float)$appliedDiscount['discount_value'] / 100);
-                } else {
-                    $discount = (float)$appliedDiscount['discount_value'];
-                }
-                $discount = min($unitPrice, $discount);
+                        $discount = $unitPrice * ((float)$appliedDiscount['discount_value'] / 100);
+                    } else {
+                        // Fixed amount: use precomputed per-unit allocation for order-scoped, otherwise per-unit fixed
+                        if (($appliedDiscount['scope'] ?? 'order') === 'order') {
+                            if (isset($perUnitDiscounts[$index])) {
+                                $discount = $perUnitDiscounts[$index];
+                            } else {
+                                $fixed = (float)$appliedDiscount['discount_value'];
+                                $discount = $cartTotalQuantity > 0 ? ($fixed / $cartTotalQuantity) : 0.0;
+                            }
+                        } else {
+                            $discount = (float)$appliedDiscount['discount_value'];
+                        }
+                    }
+                    $discount = min($unitPrice, $discount);
             }
         } else {
             // Automatic discounts: evaluate active rules and wholesale base discount
