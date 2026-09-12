@@ -101,7 +101,24 @@ function getAutomaticDiscount(item) {
         if (quantityForRule < minQty) return 0;
 
         const value = Number(rule.discount_value) || 0;
-        const discount = rule.discount_type === 'percentage' ? item.price * (value / 100) : value;
+        let discount = 0;
+        if (rule.discount_type === 'percentage') {
+            discount = item.price * (value / 100);
+        } else {
+            // Fixed amount: if rule applies to whole order, distribute proportionally by item subtotal
+            if ((rule.scope || 'order') === 'order') {
+                const orderSubtotal = cart.reduce((s, ci) => s + (Number(ci.price || 0) * Number(ci.quantity || 0)), 0) || 0;
+                if (orderSubtotal > 0) {
+                    // per-unit share = D * (item.price * item.quantity / orderSubtotal) / item.quantity
+                    discount = value * ((item.price * (item.quantity || 1)) / orderSubtotal) / (item.quantity || 1);
+                } else {
+                    const totalQty = cart.reduce((sum, cartItem) => sum + Number(cartItem.quantity || 0), 0) || 1;
+                    discount = value / totalQty;
+                }
+            } else {
+                discount = value; // product-scoped fixed amount per-unit
+            }
+        }
         return Math.min(item.price, discount);
     }
 
