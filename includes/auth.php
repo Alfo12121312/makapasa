@@ -33,10 +33,33 @@ function auth_raw_role() {
     return isset($_SESSION['role']) ? $_SESSION['role'] : '';
 }
 
+function auth_username() {
+    return isset($_SESSION['username']) ? (string)$_SESSION['username'] : '';
+}
+
+function auth_wants_json() {
+    $script = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? ''));
+    if (strpos($script, '/api/') !== false) {
+        return true;
+    }
+    $accept = (string)($_SERVER['HTTP_ACCEPT'] ?? '');
+    return stripos($accept, 'application/json') !== false;
+}
+
+function auth_fail($redirect, $message = 'Please log in to continue.', $status = 401) {
+    if (auth_wants_json()) {
+        http_response_code($status);
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => $message]);
+        exit();
+    }
+    header('Location: ' . $redirect);
+    exit();
+}
+
 function require_login($redirect = '../Login.php') {
     if (!isset($_SESSION['user_id'])) {
-        header("Location: " . $redirect);
-        exit();
+        auth_fail($redirect);
     }
 }
 
@@ -45,9 +68,45 @@ function require_roles($roles, $redirect = '../Login.php') {
     $role = auth_user_role();
     $normalizedRoles = array_map('normalize_role', (array)$roles);
     if (!in_array($role, $normalizedRoles, true)) {
-        header("Location: " . $redirect);
+        auth_fail($redirect, 'You do not have access to this page.', 403);
+    }
+}
+
+function csrf_token() {
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+function csrf_field() {
+    echo '<input type="hidden" name="csrf_token" value="' . htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8') . '">';
+}
+
+function csrf_verify($token = null) {
+    $provided = $token;
+    if ($provided === null) {
+        $provided = $_POST['csrf_token'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+    }
+    return is_string($provided) && $provided !== '' && hash_equals(csrf_token(), $provided);
+}
+
+function require_csrf($token = null) {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        return;
+    }
+    if (csrf_verify($token)) {
+        return;
+    }
+    if (auth_wants_json()) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Your session expired. Refresh the page and try again.']);
         exit();
     }
+    http_response_code(403);
+    echo 'Invalid request. Go back, refresh the page, and try again.';
+    exit();
 }
 
 function is_system_admin() {

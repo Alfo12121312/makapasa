@@ -13,11 +13,62 @@
  * - Consider extracting small helper classes (DB, InventoryService) for testability.
  */
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/layout.php';
+
+function app_config() {
+    static $config;
+    if ($config === null) {
+        $config = require __DIR__ . '/config.php';
+    }
+    return $config;
+}
+
+function app_name($conn = null) {
+    if ($conn) {
+        $stored = app_setting($conn, 'store_name', '');
+        if ($stored !== '') {
+            return $stored;
+        }
+    }
+    return (string)(app_config()['app_name'] ?? 'MakaPasa');
+}
+
+function app_setting($conn, $key, $default = '') {
+    $stmt = $conn->prepare('SELECT setting_value FROM system_settings WHERE setting_key = ? LIMIT 1');
+    if (!$stmt) {
+        return $default;
+    }
+    $stmt->bind_param('s', $key);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $value = $default;
+    if ($result && $result->num_rows > 0) {
+        $row = $result->fetch_assoc();
+        $value = $row['setting_value'] !== null && $row['setting_value'] !== '' ? $row['setting_value'] : $default;
+    }
+    $stmt->close();
+    return $value;
+}
 
 function app_connect() {
-    $conn = new mysqli("localhost", "root", "", "agrivet_db", 3306);
+    $config = app_config();
+    $conn = new mysqli(
+        $config['db_host'],
+        $config['db_user'],
+        $config['db_pass'],
+        $config['db_name'],
+        (int)$config['db_port']
+    );
     if ($conn->connect_error) {
-        die("Connection failed: " . $conn->connect_error);
+        if (auth_wants_json()) {
+            http_response_code(500);
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Cannot reach the database.']);
+            exit();
+        }
+        http_response_code(500);
+        echo 'Cannot reach the database. Check XAMPP MySQL and includes/config.php.';
+        exit();
     }
 
     ensure_role_schema($conn);
@@ -247,7 +298,10 @@ function ensure_core_schema($conn) {
 
     $settings = [
         'cashier_can_apply_discounts' => '0',
-        'cashier_can_manage_layaway_payments' => '1'
+        'cashier_can_manage_layaway_payments' => '1',
+        'store_name' => (string)(app_config()['app_name'] ?? 'MakaPasa'),
+        'store_address' => '',
+        'wholesale_discount_percent' => '10'
     ];
 
     // Default roles -> permissions mapping. Stored as JSON in system_settings
@@ -557,6 +611,35 @@ function get_expired_products($conn) {
 
 // ============ END EXPIRATION DATE MANAGEMENT ============
 
+function fetch_available_stock_batches($conn, $productId) {
+    $sql = "SELECT batch_key, expiration_date, SUM(signed_qty) AS available_qty
+            FROM (
+                SELECT
+                    COALESCE(NULLIF(batch_reference, ''), CONCAT('LEGACY-', id)) AS batch_key,
+                    expiration_date,
+                    CASE WHEN movement_type = 'IN' THEN quantity ELSE -quantity END AS signed_qty
+                FROM stock_movements
+                WHERE product_id = ?
+            ) batches
+            GROUP BY batch_key, expiration_date
+            HAVING available_qty > 0
+            ORDER BY (expiration_date IS NULL), expiration_date ASC";
+
+    $batches = [];
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return $batches;
+    }
+    $stmt->bind_param('i', $productId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    while ($row = $result->fetch_assoc()) {
+        $batches[] = $row;
+    }
+    $stmt->close();
+    return $batches;
+}
+
 function json_response($payload, $statusCode = 200) {
     http_response_code($statusCode);
     header('Content-Type: application/json');
@@ -581,36 +664,35 @@ function render_sidebar($context, $activePage, $title = null) {
         $adminBase = $context === 'root' ? 'Admin/' : '';
         $sections = [
             'Sales & Transactions' => [
-                ['label' => ' Shift Reports', 'href' => $adminBase . 'Shift-Report.php'],
-                ['label' => ' Layaway', 'href' => $adminBase . 'Layaway.php']
+                ['label' => 'Shift Reports', 'href' => $adminBase . 'Shift-Report.php'],
+                ['label' => 'Layaway', 'href' => $adminBase . 'Layaway.php']
             ],
-            ' Inventory' => [
-                ['label' => ' Products', 'href' => $adminBase . 'Manage-Product.php'],
-                ['label' => ' Stock', 'href' => $adminBase . 'Inventory.php'],
-                // hide ['label' => ' Expiration', 'href' => $adminBase . 'Expiration-Management.php'],
-                ['label' => ' Categories', 'href' => $adminBase . 'Categories.php']
+            'Inventory' => [
+                ['label' => 'Products', 'href' => $adminBase . 'Manage-Product.php'],
+                ['label' => 'Stock', 'href' => $adminBase . 'Inventory.php'],
+                ['label' => 'Categories', 'href' => $adminBase . 'Categories.php']
             ],
-            ' Customers' => [
-                ['label' => ' Customers', 'href' => $adminBase . 'Customers.php']
+            'Customers' => [
+                ['label' => 'Customers', 'href' => $adminBase . 'Customers.php']
             ],
-            ' Staff' => [
-                ['label' => ' Employees', 'href' => $adminBase . 'Employees.php'],
-                ['label' => ' Attendance', 'href' => $adminBase . 'Attendance.php'],
-                ['label' => ' Payroll', 'href' => $adminBase . 'Payroll.php']
+            'Staff' => [
+                ['label' => 'Employees', 'href' => $adminBase . 'Employees.php'],
+                ['label' => 'Attendance', 'href' => $adminBase . 'Attendance.php'],
+                ['label' => 'Payroll', 'href' => $adminBase . 'Payroll.php']
             ],
-            ' Purchasing' => [
-                ['label' => ' Suppliers', 'href' => $adminBase . 'Suppliers.php'],
-                ['label' => ' Orders', 'href' => $adminBase . 'Purchasing.php'],
-                ['label' => ' Expenses', 'href' => $adminBase . 'Expenses.php']
+            'Purchasing' => [
+                ['label' => 'Suppliers', 'href' => $adminBase . 'Suppliers.php'],
+                ['label' => 'Orders', 'href' => $adminBase . 'Purchasing.php'],
+                ['label' => 'Expenses', 'href' => $adminBase . 'Expenses.php']
             ],
-            ' Reports' => [
-                ['label' => ' Sales', 'href' => $adminBase . 'Sales-ReportAdmin.php'],
-                ['label' => ' Profit & Loss', 'href' => $root . 'Profit-Loss.php']
+            'Reports' => [
+                ['label' => 'Sales', 'href' => $adminBase . 'Sales-ReportAdmin.php'],
+                ['label' => 'Profit & Loss', 'href' => $root . 'Profit-Loss.php']
             ],
-            ' Settings' => [
-                ['label' => ' Discounts', 'href' => $adminBase . 'Discounts.php'],
-                ['label' => ' Settings', 'href' => $adminBase . 'System-Settings.php'],
-                ['label' => ' Users', 'href' => $adminBase . 'Users.php']
+            'Settings' => [
+                ['label' => 'Discounts', 'href' => $adminBase . 'Discounts.php'],
+                ['label' => 'Settings', 'href' => $adminBase . 'System-Settings.php'],
+                ['label' => 'Users', 'href' => $adminBase . 'Users.php']
             ]
         ];
     }
@@ -644,7 +726,7 @@ function render_sidebar($context, $activePage, $title = null) {
 
     echo '<div class="sidebar">';
     echo '<button class="menu-toggle" type="button" onclick="toggleSidebar()">&#9776;</button>';
-    echo '<h2 class="title">' . htmlspecialchars($title) . '</h2>';
+    echo '<h2 class="title">' . htmlspecialchars(app_name() . ' · ' . $title) . '</h2>';
     echo '<img src="' . htmlspecialchars($root . 'assets/logo.png') . '" alt="Logo" class="logo">';
 
     if ($role === 'Admin') {

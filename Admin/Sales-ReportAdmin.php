@@ -13,17 +13,9 @@
  * - Consider caching or pagination for large result sets.
  */
 require_once __DIR__ . "/../includes/app.php";
-require_roles(['Admin'], 'Login.php');
+require_roles(['Admin'], '../Login.php');
 
-$conn = new mysqli("localhost", "root", "", "agrivet_db");
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
-// AUTO-MIGRATION
-$checkCreatedAt = $conn->query("SHOW COLUMNS FROM sales LIKE 'created_at'");
-if ($checkCreatedAt && $checkCreatedAt->num_rows === 0) {
-    $conn->query("ALTER TABLE sales ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
-}
+$conn = app_connect();
 
 // FILTER
 $filter_type = isset($_GET['filter']) ? $_GET['filter'] : 'today';
@@ -76,20 +68,14 @@ while ($row = $sales_result->fetch_assoc()) {
     $total_discount += $row['discount'] * $row['quantity'];
     $total_quantity += $row['quantity'];
 }
+
+render_app_open([
+    'context' => 'admin',
+    'active' => 'Sales-ReportAdmin.php',
+    'role_title' => 'Admin',
+    'title' => 'Sales Report',
+]);
 ?>
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Sales Report Admin</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-
-<?php render_sidebar('admin', 'Sales-ReportAdmin.php', auth_user_role()); ?>
-
-<div class="userAdmin">
 
 <div class="page-header">
     <div>
@@ -163,10 +149,4 @@ while ($row = $sales_result->fetch_assoc()) {
 </table>
 </div>
 
-</div>
-
-<script src="script.js"></script>
-</body>
-</html>
-
-<?php $conn->close(); ?>
+<?php render_app_close(['context' => 'admin']); ?>

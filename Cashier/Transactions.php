@@ -8,43 +8,30 @@
  * Notes / Improvements:
  * - Query limits to 300 rows; consider pagination for large datasets.
  */
-require_once __DIR__ . "/../includes/auth.php";
 require_once __DIR__ . "/../includes/app.php";
-
 require_roles(['Cashier'], '../Login.php');
 
 $conn = app_connect();
-render_sidebar('cashier', 'Transactions.php', 'Cashier');
 
 $cashier_id = auth_user_id();
-$transactions = $conn->query("SELECT s.id, s.created_at, i.product_name, s.quantity, s.unit_price, s.discount, s.total_price
-                              FROM sales s
-                              JOIN inventory i ON i.id = s.product_id
-                              WHERE s.cashier_id = " . (int)$cashier_id . "
-                              ORDER BY s.created_at DESC
-                              LIMIT 300");
+$txnStmt = $conn->prepare("SELECT s.id, s.created_at, i.product_name, s.quantity, s.unit_price, s.discount, s.total_price
+                            FROM sales s
+                            JOIN inventory i ON i.id = s.product_id
+                            WHERE s.cashier_id = ?
+                            ORDER BY s.created_at DESC
+                            LIMIT 300");
+$txnStmt->bind_param("i", $cashier_id);
+$txnStmt->execute();
+$transactions = $txnStmt->get_result();
+$txnStmt->close();
+
+render_app_open([
+    'context' => 'cashier',
+    'active' => 'Transactions.php',
+    'role_title' => 'Cashier',
+    'title' => 'My Transactions',
+]);
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cashier Transactions</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-<!-- <div class="sidebar">
-    <button class="menu-toggle" onclick="toggleSidebar()">&#9776;</button>
-    <h2 class="title">Agrivet Cashier</h2>
-    <img src="../assets/logo.png" alt="Logo" class="logo">
-    <ul>
-        <li><a href="POS.php">POS</a></li>
-        <li class="active"><a href="Transactions.php">Transactions</a></li>
-        <li><a href="Receipts.php">Receipts</a></li>
-        <li><a href="../logout.php">Logout</a></li>
-    </ul>
-</div> -->
-<div class="userAdmin">
     <h1>My Transactions</h1>
     <p>Cashier access is limited to your own transactions and receipts.</p>
     <div class="user-table-wrapper">
@@ -68,8 +55,5 @@ $transactions = $conn->query("SELECT s.id, s.created_at, i.product_name, s.quant
             </tbody>
         </table>
     </div>
-</div>
-<script src="../script.js"></script>
-</body>
-</html>
-<?php $conn->close(); ?>
+
+<?php render_app_close(['context' => 'cashier']); ?>

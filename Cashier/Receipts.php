@@ -8,22 +8,23 @@
  * Notes / Improvements:
  * - Keep printing UI separate from API logic; this file is presentation-only.
  */
-require_once __DIR__ . "/../includes/auth.php";
 require_once __DIR__ . "/../includes/app.php";
-
 require_roles(['Cashier'], '../Login.php');
 
 $conn = app_connect();
-render_sidebar('cashier', 'Receipts.php', 'Cashier');
 
 $cashier_id = auth_user_id();
 $selected_id = isset($_GET['sale_id']) ? (int)$_GET['sale_id'] : 0;
 
-$list = $conn->query("SELECT id, created_at, total_price, sale_reference, product_id
-                      FROM sales
-                      WHERE cashier_id = " . $cashier_id . "
-                      ORDER BY created_at DESC
-                      LIMIT 200");
+$listStmt = $conn->prepare("SELECT id, created_at, total_price, sale_reference, product_id
+                           FROM sales
+                           WHERE cashier_id = ?
+                           ORDER BY created_at DESC
+                           LIMIT 200");
+$listStmt->bind_param("i", $cashier_id);
+$listStmt->execute();
+$list = $listStmt->get_result();
+$listStmt->close();
 
 $receipt = null;
 if ($selected_id > 0) {
@@ -38,32 +39,19 @@ if ($selected_id > 0) {
     $receipt = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 }
+
+render_app_open([
+    'context' => 'cashier',
+    'active' => 'Receipts.php',
+    'role_title' => 'Cashier',
+    'title' => 'Receipt Reprint',
+]);
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Receipts</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-<!-- <div class="sidebar">
-    <button class="menu-toggle" onclick="toggleSidebar()">&#9776;</button>
-    <h2 class="title">Agrivet Cashier</h2>
-    <img src="../assets/logo.png" alt="Logo" class="logo">
-    <ul>
-        <li><a href="POS.php">POS</a></li>
-        <li><a href="Transactions.php">Transactions</a></li>
-        <li class="active"><a href="Receipts.php">Receipts</a></li>
-        <li><a href="../logout.php">Logout</a></li>
-    </ul>
-</div> -->
-<div class="userAdmin">
     <h1>Receipt Reprint</h1>
     <p>Select a sale to view and print as PDF.</p>
     <div class="report-filters">
         <form method="get">
+            <?php csrf_field(); ?>
             <select name="sale_id" required>
                 <option value="">Select Sale</option>
                 <?php if ($list && $list->num_rows > 0): while($row = $list->fetch_assoc()): ?>
@@ -99,9 +87,6 @@ if ($selected_id > 0) {
         </div>
     </div>
     <?php endif; ?>
-</div>
-<script src="../script.js"></script>
-</body>
-</html>
-<?php $conn->close(); ?>
+
+<?php render_app_close(['context' => 'cashier']); ?>
 
