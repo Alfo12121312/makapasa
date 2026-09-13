@@ -20,19 +20,7 @@ $can_edit = true;
 $can_toggle = true;
 
 
-// Database configuration
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "agrivet_db";
-
-// Create connection
-$conn = new mysqli($servername, $username, $password, $dbname);
-
-// Check connection
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
+$conn = app_connect();
 
 // Auto process expired batches by creating stock-out entries for expired stock
 process_auto_expiration($conn, auth_user_id());

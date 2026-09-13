@@ -11,10 +11,8 @@
  */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
-$conn = new mysqli("localhost", "root", "", "agrivet_db");
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
+
+$conn = app_connect();
 
 /* $conn->query("CREATE TABLE IF NOT EXISTS purchase_orders (
     id INT AUTO_INCREMENT PRIMARY KEY,

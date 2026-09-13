@@ -19,10 +19,7 @@ if (!isset($_SESSION)) {
     session_start();
 }
 
-$conn = new mysqli("localhost", "root", "", "agrivet_db");
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
+$conn = app_connect();
 
 $conn->query("CREATE TABLE IF NOT EXISTS product_categories (
     id INT AUTO_INCREMENT PRIMARY KEY,
