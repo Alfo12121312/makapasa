@@ -8,10 +8,26 @@
  * - Discount option loading and state live in `window.cashierSelectableDiscounts` around lines 81-82 and network loading at lines 445,452-458.
  * - Network/error handling and user feedback are minimal; see `confirmTransaction()` and fetch handling around lines 520-580.
  */
-function togglePassword() {
-    const passwordInput = document.getElementById('passID');
+function togglePassword(button) {
+    const toggleButton = button || document.querySelector('.field-toggle-btn');
+    if (!toggleButton) return;
+
+    // Look for the password input next to this specific button first
+    // (supports more than one password field/toggle on the same page);
+    // fall back to #passID for any existing markup that doesn't wrap the
+    // input and button in a shared container.
+    const wrapper = toggleButton.closest('.field-with-toggle');
+    const passwordInput = (wrapper && wrapper.querySelector('input[type="password"], input.password-field'))
+        || document.getElementById('passID');
     if (!passwordInput) return;
-    passwordInput.type = passwordInput.type === 'password' ? 'text' : 'password';
+
+    const showPassword = passwordInput.type === 'password';
+    passwordInput.type = showPassword ? 'text' : 'password';
+    passwordInput.classList.add('password-field');
+
+    toggleButton.textContent = showPassword ? 'Hide' : 'Show';
+    toggleButton.setAttribute('aria-label', showPassword ? 'Hide password' : 'Show password');
+    toggleButton.setAttribute('aria-pressed', String(showPassword));
 }
 
 function printReport() {
@@ -35,8 +51,15 @@ function toggleSidebarGroup(button) {
 }
 
 function cancelEdit() {
-    const form = document.getElementById('editForm');
-    if (form) form.style.display = 'none';
+    // Shared by every page that calls cancelEdit() from a Cancel/Close
+    // button. Only one of these will exist on any given page, so this
+    // stays a single consolidated function instead of each page defining
+    // (and silently overriding) its own same-named version.
+    const editForm = document.getElementById('editForm');
+    if (editForm) editForm.style.display = 'none';
+
+    const editPopup = document.getElementById('editPopup');
+    if (editPopup) editPopup.style.display = 'none';
 }
 
 function updateStock(id, currentQuantity) {
@@ -808,4 +831,99 @@ document.addEventListener('DOMContentLoaded', function() {
         syncInventorySnapshot();
         window.setInterval(syncInventorySnapshot, 10000);
     }
+});
+
+/* ========================================================================
+ * SHARED APP-PAGE COMPONENTS
+ * Toast stack, row-action menus, toolbar search/filter, and a small
+ * client-side paginator for plain HTML tables. Used by includes/header.php
+ * + includes/footer.php and any page using the .app-toolbar / .row-menu /
+ * .app-pagination markup.
+ * ==================================================================== */
+
+function showToast(type, message, timeout) {
+    var stack = document.getElementById('app-toast-stack');
+    if (!stack) return;
+    var icons = { success: '✓', error: '✕', warning: '!' };
+    var toast = document.createElement('div');
+    toast.className = 'app-toast ' + (type || 'success');
+    toast.innerHTML =
+        '<span class="toast-icon">' + (icons[type] || icons.success) + '</span>' +
+        '<span class="toast-message"></span>' +
+        '<button type="button" class="toast-close" aria-label="Dismiss">&times;</button>';
+    toast.querySelector('.toast-message').textContent = message;
+    toast.querySelector('.toast-close').addEventListener('click', function () {
+        toast.remove();
+    });
+    stack.appendChild(toast);
+    window.setTimeout(function () {
+        if (toast.parentNode) toast.remove();
+    }, timeout || 5000);
+}
+
+function initAppToasts() {
+    if (!Array.isArray(window.__appToasts)) return;
+    window.__appToasts.forEach(function (t) {
+        showToast(t.type, t.message);
+    });
+    window.__appToasts = [];
+}
+
+function initRowMenus() {
+    document.addEventListener('click', function (event) {
+        var openMenus = document.querySelectorAll('.row-menu.open');
+        var trigger = event.target.closest('.row-menu-trigger');
+        var clickedMenu = event.target.closest('.row-menu');
+
+        openMenus.forEach(function (menu) {
+            if (menu !== clickedMenu) menu.classList.remove('open');
+        });
+
+        if (trigger) {
+            var menu = trigger.closest('.row-menu');
+            if (menu) menu.classList.toggle('open');
+        }
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') {
+            document.querySelectorAll('.row-menu.open').forEach(function (m) {
+                m.classList.remove('open');
+            });
+        }
+    });
+}
+
+// Wires up any [data-app-search] input to filter rows in the table it
+// targets via data-target="#selector". Filters on every <td> text in the row.
+function initToolbarSearch() {
+    document.querySelectorAll('[data-app-search]').forEach(function (input) {
+        var targetSelector = input.getAttribute('data-target');
+        var table = targetSelector ? document.querySelector(targetSelector) : input.closest('.app-toolbar').parentElement.querySelector('table');
+        if (!table) return;
+        var countEl = document.querySelector(input.getAttribute('data-count-target') || '');
+
+        function applyFilter() {
+            var term = input.value.trim().toLowerCase();
+            var rows = table.querySelectorAll('tbody tr');
+            var visible = 0;
+            rows.forEach(function (row) {
+                if (row.hasAttribute('data-empty-row')) return;
+                var text = row.textContent.toLowerCase();
+                var match = !term || text.indexOf(term) !== -1;
+                row.style.display = match ? '' : 'none';
+                if (match) visible++;
+            });
+            if (countEl) countEl.textContent = visible + (visible === 1 ? ' row' : ' rows');
+            document.dispatchEvent(new CustomEvent('app-table-filtered', { detail: { table: table, visible: visible } }));
+        }
+
+        input.addEventListener('input', applyFilter);
+        applyFilter();
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    initAppToasts();
+    initRowMenus();
+    initToolbarSearch();
 });

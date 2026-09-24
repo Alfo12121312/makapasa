@@ -33,6 +33,7 @@ $sessionOpen = $session && $session['status'] === 'Open';
 $sessionId = $session ? (int)$session['id'] : 0;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['start_day'])) {
+    require_csrf();
     $openingCash = max(0, (float)$_POST['opening_cash']);
     $stmt = $conn->prepare("INSERT INTO cashier_sessions (cashier_id, session_date, opening_cash, status)
                             VALUES (?, ?, ?, 'Open')
@@ -42,22 +43,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['start_day'])) {
         $successMessage = 'Shift started successfully.';
     } else {
         $errorMessage = 'Unable to start shift.';
-    }
-    $stmt->close();
-}
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['end_day'])) {
-    $closingCash = max(0, (float)$_POST['closing_cash']);
-
-
-    $stmt = $conn->prepare("UPDATE cashier_sessions
-                            SET cash_in = ?, cash_out = ?, closing_cash = ?, status = 'Closed', closed_at = NOW()
-                            WHERE id = ?");
-    $stmt->bind_param("dddi", $cashIn, $cashOut, $closingCash, $sessionId);
-    if ($stmt->execute()) {
-        $successMessage = 'Shift closed successfully.';
-    } else {
-        $errorMessage = 'Unable to close shift.';
     }
     $stmt->close();
 }
@@ -95,7 +80,11 @@ while ($row = $cashierSelectableResult->fetch_assoc()) {
 }
 $cashierSelectableStmt->close();
 
-$products = $conn->query("SELECT id, product_name, category, price, product_unit, stock_quantity
+$wholesalePercent = (float)app_setting($conn, 'wholesale_discount_percent', '10');
+$storeName = app_name($conn);
+$storeAddress = (string)app_setting($conn, 'store_address', '');
+
+$products = $conn->query("SELECT id, product_name, product_code, category, price, product_unit, stock_quantity
                           FROM inventory
                           WHERE status = 'Active' AND inventory_type = 'Display' AND stock_quantity > 0
                           ORDER BY category, product_name");
@@ -111,21 +100,15 @@ if ($products) {
     }
 }
 $activeCategory = $categories[0] ?? '';
+<?php
+render_app_open([
+    'context' => 'cashier',
+    'active' => 'POS.php',
+    'role_title' => 'Cashier',
+    'title' => 'Point of Sale',
+    'content_class' => 'userAdmin pos-page',
+]);
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Point of Sale · MakaPasa</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-<?php render_sidebar('cashier', 'POS.php', 'Cashier'); ?>
-<div class="userAdmin pos-page">
 
     <div class="pos-topbar">
         <div class="pos-topbar-text">
@@ -147,6 +130,7 @@ $activeCategory = $categories[0] ?? '';
         <h2>Start Shift</h2>
         <p class="pos-start-hint">Enter the cash you're starting the drawer with to open the register.</p>
         <form method="post">
+            <?php csrf_field(); ?>
             <input type="number" step="0.01" min="0" name="opening_cash" placeholder="Opening Cash" required>
             <button type="submit" name="start_day">Start Shift</button>
         </form>
@@ -163,7 +147,7 @@ $activeCategory = $categories[0] ?? '';
             <div class="pos-toolbar">
                 <h2>Products</h2>
                 <div class="pos-search">
-                    <input type="text" id="pos-search" placeholder="Search products..." onkeyup="filterPosProducts()">
+                    <input type="text" id="pos-search" placeholder="Scan barcode or search name..." autocomplete="off" onkeyup="filterPosProducts()">
                 </div>
             </div>
             <?php if (!empty($discountRules)): ?>
@@ -184,6 +168,7 @@ $activeCategory = $categories[0] ?? '';
                     <div class="product-card"
                          data-product-id="<?php echo (int)$product['id']; ?>"
                          data-name="<?php echo htmlspecialchars(strtolower($product['product_name'])); ?>"
+                         data-code="<?php echo htmlspecialchars(strtolower((string)($product['product_code'] ?? ''))); ?>"
                          data-category="<?php echo htmlspecialchars($product['category']); ?>"
                          data-stock="<?php echo (int)$product['stock_quantity']; ?>"
                          <?php echo $product['category'] !== $activeCategory ? 'style="display:none;"' : ''; ?>>
@@ -227,6 +212,7 @@ $activeCategory = $categories[0] ?? '';
             </div>
 
             <p class="small-text pos-permission-note">Manual per-item discount: <strong><?php echo $canManualDiscount ? 'Enabled' : 'Disabled'; ?></strong></p>
+            <p class="small-text pos-shortcut-note">Shortcuts: <kbd>/</kbd> search · <kbd>Enter</kbd> add scan · <kbd>F2</kbd> pay · <kbd>Esc</kbd> close</p>
 
             <div class="checkout-summary">
                 <div class="summary-row"><span>Subtotal</span><span id="subtotal">PHP 0.00</span></div>
@@ -271,10 +257,5 @@ window.inventorySnapshotUrl = '../api/inventory_snapshot.php';
 window.discountOptionsUrl = '../api/discount_options.php';
 window.processSaleUrl = '../api/process_sale.php';
 </script>
-<script src="../script.js"></script>
-</body>
-</html>
 
-<?php
-$conn->close();
-?>
+<?php render_app_close(['context' => 'cashier']); ?>

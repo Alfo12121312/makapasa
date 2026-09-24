@@ -28,37 +28,14 @@ $result = $conn->query($sql);
 // FILTER DATA
 $categories_result = $conn->query("SELECT DISTINCT category FROM inventory WHERE status='Active' AND category IS NOT NULL");
 $suppliers_result  = $conn->query("SELECT DISTINCT supplier FROM inventory WHERE status='Active' AND supplier IS NOT NULL");
+
+$context = 'owner';
+$page_title = 'Inventory';
+$breadcrumb = ['Inventory'];
+$active = 'Inventory.php';
+$role_title = 'Owner';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>Owner Inventory</title>
-<link rel="stylesheet" href="../style.css">
-</head>
-
-<body>
-<?php render_sidebar('owner', 'Inventory.php', 'Owner'); ?>
-<!-- SIDEBAR NAVIGATION (RESTORED) -->
-<!-- <div class="sidebar">
-    <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
-
-    <h2 class="title">Agrivet Owner</h2>
-    <img src="../assets/logo.png" class="logo">
-
-    <ul>
-        <li><a href="Dashboard-Owner.php">Dashboard</a></li>
-        <li class="active"><a href="Inventory.php">Inventory</a></li>
-        <li><a href="HR-Summary.php">HR Summary</a></li>
-        <li><a href="../Sales-Report.php">Sales Report</a></li>
-        <li><a href="../logout.php">Logout</a></li>
-    </ul>
-</div>
-
-MAIN -->
-<div class="userAdmin">
-
 <h1>Inventory </h1>
 <p>Owner can only view inventory data.</p>
 
@@ -104,11 +81,11 @@ MAIN -->
     </div>
 </div>
 
-<div class="Legend">
+<!-- <div class="Legend">
     <div class="item"><span class="status-dot dot-out"></span>Out of Stock</div>
     <div class="item"><span class="status-dot dot-low"></span>Low Stock</div>
     <div class="item"><span class="status-dot dot-ok"></span>In Stock</div>
-</div>
+</div> -->
 
 <!-- TABLE -->
 <table id="inventoryTable" class="userTable">
@@ -156,10 +133,7 @@ MAIN -->
 </tbody>
 </table>
 
-</div>
 
-<script src="../script.js"></script>
-</body>
-</html>
-
-<?php $conn->close(); ?>
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

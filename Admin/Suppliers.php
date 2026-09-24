@@ -1,15 +1,7 @@
-﻿<?php
+<?php
 /*
  * File: Admin/Suppliers.php
  * Purpose: Manage supplier master data and summaries.
- * Key locations:
- * - Bootstrap: `require_once __DIR__ . '/../includes/app.php';` at line 2
- * - Access control: `require_roles(...)` at line 3
- * - Uses `app_connect()` at line 6 for DB connection
- * - Table creation for `product_suppliers` begins around line 8 (consider moving migrations out of runtime)
- * Known issues / improvements:
- * - Table creation on page load should be moved to migrations; current code will run schema checks every request.
- * - Validation for contact and email exists (`is_valid_contact_number`) but consider stronger email validation and XSS-safe outputs.
  */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
@@ -31,10 +23,8 @@ function is_valid_contact_number($value) {
 }
 
 $editing_supplier = null;
-$error_message = '';
-$success_message = '';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['toggle_status'])) {
     $supplier_id = (int)($_POST['supplier_id'] ?? 0);
     $action = $_POST['supplier_action'] ?? 'add';
     $name = trim($_POST['supplier_name'] ?? '');
@@ -46,32 +36,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($name === '') {
-        $error_message = 'Supplier name is required.';
+        flash_error('Supplier name is required.');
     } elseif (!is_valid_contact_number($number)) {
-        $error_message = 'Supplier contact number may only contain digits, spaces, +, and -.';
+        flash_error('Supplier contact number may only contain digits, spaces, +, and -.');
     } else {
         if ($action === 'update' && $supplier_id > 0) {
             $stmt = $conn->prepare("UPDATE product_suppliers SET supplier_name = ?, contact_number = ?, contact_email = ?, supplier_description = ?, is_active = 1 WHERE id = ?");
             $stmt->bind_param('ssssi', $name, $number, $email, $description, $supplier_id);
             if ($stmt->execute()) {
-                $success_message = 'Supplier updated successfully.';
-                header('Location: Suppliers.php'); exit;
+                flash_success('Supplier updated successfully.');
             } else {
-                $error_message = 'Error updating supplier: ' . $stmt->error;
+                flash_error('Error updating supplier: ' . $stmt->error);
             }
             $stmt->close();
         } else {
             $stmt = $conn->prepare("INSERT INTO product_suppliers (supplier_name, contact_number, contact_email, supplier_description) VALUES (?, ?, ?, ?)");
             $stmt->bind_param('ssss', $name, $number, $email, $description);
             if ($stmt->execute()) {
-                $success_message = 'Supplier added successfully.';
-                header('Location: Suppliers.php'); exit;
+                flash_success('Supplier added successfully.');
             } else {
-                $error_message = 'Error adding supplier: ' . $stmt->error;
+                flash_error('Error adding supplier: ' . $stmt->error);
             }
             $stmt->close();
         }
     }
+    header('Location: Suppliers.php');
+    exit;
 }
 
 if (isset($_GET['id'])) {
@@ -89,7 +79,7 @@ if (isset($_GET['id'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_status'])) {
     $supplier_id = (int)($_POST['supplier_id'] ?? 0);
     if ($supplier_id > 0) {
-        $stmt = $conn->prepare('SELECT is_active FROM product_suppliers WHERE id = ?');
+        $stmt = $conn->prepare('SELECT is_active, supplier_name FROM product_suppliers WHERE id = ?');
         $stmt->bind_param('i', $supplier_id);
         $stmt->execute();
         $result = $stmt->get_result();
@@ -100,7 +90,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_status'])) {
         $stmt->bind_param('ii', $new_status, $supplier_id);
         $stmt->execute();
         $stmt->close();
-        header('Location: Suppliers.php'); exit;
+        flash_success(($new_status ? 'Restored "' : 'Archived "') . ($row['supplier_name'] ?? 'Supplier') . '".');
+        header('Location: Suppliers.php');
+        exit;
     }
 }
 
@@ -118,129 +110,135 @@ $supplierSql = "SELECT ps.id,
                 GROUP BY ps.id, ps.supplier_name, ps.contact_number, ps.contact_email, ps.supplier_description, ps.is_active
                 ORDER BY ps.is_active DESC, ps.supplier_name ASC";
 $suppliers = $conn->query($supplierSql);
+$supplierRows = $suppliers ? $suppliers->fetch_all(MYSQLI_ASSOC) : [];
 
 $totalsSql = "SELECT COUNT(*) AS supplier_count,
                      COALESCE(SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END), 0) AS active_count
               FROM product_suppliers";
 $totals = $conn->query($totalsSql);
 $summary = $totals ? $totals->fetch_assoc() : ['supplier_count' => 0, 'active_count' => 0];
+
+$page_title = 'Suppliers';
+$breadcrumb = ['Inventory', 'Suppliers'];
+$active = 'Suppliers.php';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Suppliers</title>
-    <link rel="stylesheet" href="../style.css">
-    <style>
-    .form-container{max-width:900px}
-    .form-grid{display:flex;gap:16px;flex-wrap:wrap}
-    .form-column{flex:1;min-width:220px;display:flex;flex-direction:column}
-    .form-column label{margin-bottom:6px;font-weight:600}
-    .form-column input{padding:8px;border:1px solid #ccc;border-radius:4px}
-    .form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
-    @media (max-width:600px){.form-grid{flex-direction:column}.form-actions{justify-content:flex-start}}
-    </style>
-</head>
-<body>
-<?php render_sidebar('admin', 'Suppliers.php', 'Admin'); ?>
+<style>
+.form-grid{display:flex;gap:16px;flex-wrap:wrap}
+.form-column{flex:1;min-width:220px;display:flex;flex-direction:column}
+.form-column label{margin-bottom:6px;font-weight:600}
+.form-column input{padding:8px;border:1px solid var(--border);border-radius:var(--radius-sm)}
+.form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+@media (max-width:600px){.form-grid{flex-direction:column}.form-actions{justify-content:flex-start}}
+</style>
 
-<div class="userAdmin">
-    <div class="page-header">
-        <div>
-            <h1>Suppliers</h1>
-            <p>Add, edit, archive, or restore suppliers used in the system.</p>
-        </div>
-        <span class="chip">Supplier Management</span>
+<?php render_page_heading('Suppliers', 'Add, edit, archive, or restore suppliers used in the system.'); ?>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="label">Total Suppliers</div>
+        <div class="value"><?php echo number_format((int)$summary['supplier_count']); ?></div>
     </div>
-
-    <div class="stats-grid">
-        <div class="stat-card">
-            <div class="label">Total Suppliers</div>
-            <div class="value"><?php echo number_format((int)$summary['supplier_count']); ?></div>
-        </div>
-        <div class="stat-card">
-            <div class="label">Active Suppliers</div>
-            <div class="value"><?php echo number_format((int)$summary['active_count']); ?></div>
-        </div>
-    </div>
-
-    <?php if (!empty($success_message)): ?>
-        <div class="alert-success"><?php echo htmlspecialchars($success_message); ?></div>
-    <?php endif; ?>
-    <?php if (!empty($error_message)): ?>
-        <div class="alert-error"><?php echo htmlspecialchars($error_message); ?></div>
-    <?php endif; ?>
-
-    <div class="form-container">
-        <h2><?php echo $editing_supplier ? 'Edit Supplier' : 'Create Supplier'; ?></h2>
-        <form method="post" action="Suppliers.php<?php echo $editing_supplier ? '?id=' . (int)$editing_supplier['id'] : ''; ?>">
-            <input type="hidden" name="supplier_id" value="<?php echo htmlspecialchars($editing_supplier['id'] ?? ''); ?>">
-            <input type="hidden" name="supplier_action" value="<?php echo $editing_supplier ? 'update' : 'add'; ?>">
-
-            <div class="form-grid">
-                <div class="form-column">
-                    <label>Supplier Name <span style="color:red">*</span></label>
-                    <input type="text" name="supplier_name" required value="<?php echo htmlspecialchars($editing_supplier['supplier_name'] ?? ''); ?>">
-                    <label>Contact Number</label>
-                    <input type="text" name="contact_number" placeholder="e.g. +63 912 345 6789" pattern="[0-9+\-\s]+" value="<?php echo htmlspecialchars($editing_supplier['contact_number'] ?? ''); ?>">
-                </div>
-                <div class="form-column">
-                    <label>Email or N/A</label>
-                    <input type="text" name="contact_email" placeholder="Email or N/A" value="<?php echo htmlspecialchars($editing_supplier['contact_email'] ?? ''); ?>">
-                    <label>Description</label>
-                    <input type="text" name="supplier_description" value="<?php echo htmlspecialchars($editing_supplier['supplier_description'] ?? ''); ?>">
-                </div>
-            </div>
-
-            <div class="form-actions">
-                <?php if ($editing_supplier): ?>
-                    <a href="Suppliers.php" class="btn btn-secondary">Cancel</a>
-                <?php endif; ?>
-                <button type="submit" class="btn btn-primary" name="add_supplier"><?php echo $editing_supplier ? 'Update Supplier' : 'Save Supplier'; ?></button>
-            </div>
-        </form>
-    </div>
-
-    <div class="user-table-wrapper" style="margin-top:18px;">
-        <table class="userTable">
-            <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Contact</th>
-                    <th>Email</th>
-                    <th>Description</th>
-                    <th>Status</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-            <?php if ($suppliers && $suppliers->num_rows > 0): ?>
-                <?php while ($row = $suppliers->fetch_assoc()): ?>
-                    <tr>
-                        <td><?php echo htmlspecialchars($row['supplier_name']); ?></td>
-                        <td><?php echo htmlspecialchars($row['contact_number'] ?: 'N/A'); ?></td>
-                        <td><?php echo htmlspecialchars($row['contact_email'] ?: 'N/A'); ?></td>
-                        <td><?php echo htmlspecialchars($row['supplier_description'] ?: '-'); ?></td>
-                        <td><?php echo $row['is_active'] ? 'Active' : 'Inactive'; ?></td>
-                        <td>
-                            <a class="btn btn-secondary" href="Suppliers.php?id=<?php echo $row['id']; ?>">Edit</a>
-                            <form method="post" action="Suppliers.php" style="display:inline;">
-                                <input type="hidden" name="supplier_id" value="<?php echo $row['id']; ?>">
-                                <button class="btn btn-secondary" type="submit" name="toggle_status"><?php echo $row['is_active'] ? 'Archive' : 'Restore'; ?></button>
-                            </form>
-                        </td>
-                    </tr>
-                <?php endwhile; ?>
-            <?php else: ?>
-                <tr><td colspan="6">No suppliers found.</td></tr>
-            <?php endif; ?>
-            </tbody>
-        </table>
+    <div class="stat-card">
+        <div class="label">Active Suppliers</div>
+        <div class="value"><?php echo number_format((int)$summary['active_count']); ?></div>
     </div>
 </div>
 
-<script src="../script.js"></script>
-</body>
-</html>
-<?php $conn->close(); ?>
+<div class="form-container" style="max-width:900px;">
+    <h2><?php echo $editing_supplier ? 'Edit Supplier' : 'Create Supplier'; ?></h2>
+    <form method="post" action="Suppliers.php<?php echo $editing_supplier ? '?id=' . (int)$editing_supplier['id'] : ''; ?>">
+        <input type="hidden" name="supplier_id" value="<?php echo htmlspecialchars($editing_supplier['id'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+        <input type="hidden" name="supplier_action" value="<?php echo $editing_supplier ? 'update' : 'add'; ?>">
+
+        <div class="form-grid">
+            <div class="form-column">
+                <label>Supplier Name <span style="color:var(--danger)">*</span></label>
+                <input type="text" name="supplier_name" required value="<?php echo htmlspecialchars($editing_supplier['supplier_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                <label>Contact Number</label>
+                <input type="text" name="contact_number" placeholder="e.g. +63 912 345 6789" pattern="[0-9+\-\s]+" value="<?php echo htmlspecialchars($editing_supplier['contact_number'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+            </div>
+            <div class="form-column">
+                <label>Email or N/A</label>
+                <input type="text" name="contact_email" placeholder="Email or N/A" value="<?php echo htmlspecialchars($editing_supplier['contact_email'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                <label>Description</label>
+                <input type="text" name="supplier_description" value="<?php echo htmlspecialchars($editing_supplier['supplier_description'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+            </div>
+        </div>
+
+        <div class="form-actions">
+            <?php if ($editing_supplier): ?>
+                <a href="Suppliers.php" class="btn btn-secondary">Cancel</a>
+            <?php endif; ?>
+            <button type="submit" class="btn btn-primary" name="add_supplier"><?php echo $editing_supplier ? 'Update Supplier' : 'Save Supplier'; ?></button>
+        </div>
+    </form>
+</div>
+
+<div class="app-toolbar">
+    <div class="search-field">
+        <span class="search-icon">🔍</span>
+        <input type="text" placeholder="Search suppliers…" data-app-search data-target="#suppliersTable" data-count-target="#suppliersCount">
+    </div>
+    <span class="toolbar-count" id="suppliersCount"><?php echo count($supplierRows); ?> rows</span>
+</div>
+
+<div class="app-table-wrapper">
+    <table class="userTable" id="suppliersTable">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Contact</th>
+                <th>Email</th>
+                <th>Description</th>
+                <th>Status</th>
+                <th style="width:56px;"></th>
+            </tr>
+        </thead>
+        <tbody>
+        <?php if (!empty($supplierRows)): ?>
+            <?php foreach ($supplierRows as $row): ?>
+                <tr>
+                    <td><?php echo htmlspecialchars($row['supplier_name'], ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td><?php echo htmlspecialchars($row['contact_number'] ?: 'N/A', ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td><?php echo htmlspecialchars($row['contact_email'] ?: 'N/A', ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td><?php echo htmlspecialchars($row['supplier_description'] ?: '—', ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td>
+                        <?php if ((int)$row['is_active'] === 1): ?>
+                            <span class="pill pill-success">Active</span>
+                        <?php else: ?>
+                            <span class="pill pill-neutral">Archived</span>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <div class="row-menu">
+                            <button type="button" class="row-menu-trigger" aria-label="Row actions">⋮</button>
+                            <div class="row-menu-list">
+                                <a href="Suppliers.php?id=<?php echo (int)$row['id']; ?>">Edit</a>
+                                <form method="post" action="Suppliers.php">
+                                    <input type="hidden" name="supplier_id" value="<?php echo (int)$row['id']; ?>">
+                                    <button type="submit" name="toggle_status" class="<?php echo $row['is_active'] ? 'danger' : ''; ?>">
+                                        <?php echo $row['is_active'] ? 'Archive' : 'Restore'; ?>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+        <?php else: ?>
+            <tr data-empty-row><td colspan="6">
+                <div class="app-empty-state">
+                    <div class="empty-icon">🚚</div>
+                    <h3>No suppliers yet</h3>
+                    <p>Add your first supplier above to start tracking where stock comes from.</p>
+                </div>
+            </td></tr>
+        <?php endif; ?>
+        </tbody>
+    </table>
+</div>
+
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

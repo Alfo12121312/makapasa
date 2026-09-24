@@ -11,17 +11,18 @@
  * - Good use of prepared statements; ensure `amount_received` and `change_amount` are validated when bound into the sale insert.
  * - Consider limiting payload size and adding authentication/rate-limiting for public deployments.
  */
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
-
-require_once __DIR__ . '/../includes/app.php';  // Use app_connect() ✓
+require_once __DIR__ . '/../includes/app.php';
 header('Content-Type: application/json');
+require_roles(['Cashier'], '../Login.php');
 
 $conn = app_connect();
 $payload = json_decode(file_get_contents('php://input'), true);
 if (json_last_error() !== JSON_ERROR_NONE) {
     json_response(['success' => false, 'message' => 'Invalid request'], 400);
 }
+
+$csrfToken = $payload['csrf_token'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
+require_csrf($csrfToken);
 
 $cashierId = auth_user_id();
 $sessionStmt = $conn->prepare("SELECT id, opening_cash, total_sales, cash_in, cash_out, status
@@ -133,6 +134,7 @@ if ($appliedDiscount && ($appliedDiscount['discount_type'] ?? '') === 'fixed' &&
     }
 }
 
+$inventoryUpdates = [];
 $conn->begin_transaction();
 try {
     foreach ($cart as $index => $item) {
@@ -172,7 +174,8 @@ try {
                 $discount = calculate_cart_discount_for_item(['id' => $productId, 'price' => $unitPrice, 'quantity' => $quantity], $activeDiscountRules, $cartTotalQuantity);
             }
             if ($saleType === 'Wholesale') {
-                $wholesale = $unitPrice * 0.1; // 10% wholesale
+                $wholesaleRate = max(0, min(100, (float)app_setting($conn, 'wholesale_discount_percent', '10'))) / 100;
+                $wholesale = $unitPrice * $wholesaleRate;
                 $discount = max($discount, min($unitPrice, $wholesale));
             }
         }
@@ -198,56 +201,30 @@ try {
         if ($stock < $quantity) throw new Exception('Insufficient stock');
         $inventoryUpdates[$productId] = $stock - $quantity;
 
-        // FIFO Stock Deduction: Get batches ordered by expiration date
-        $batchStmt = $conn->prepare("SELECT id, quantity, expiration_date FROM stock_movements 
-                                     WHERE product_id = ? AND movement_type = 'IN' AND quantity > 0
-                                     ORDER BY expiration_date ASC, created_at ASC");
-        $batchStmt->bind_param("i", $productId);
-        $batchStmt->execute();
-        $batchResult = $batchStmt->get_result();
-        
-        $batches = [];
-        $totalAvailable = 0;
-        while ($batch = $batchResult->fetch_assoc()) {
-            $batches[] = $batch;
-            $totalAvailable += $batch['quantity'];
-        }
-        $batchStmt->close();
-
-        if ($totalAvailable < $quantity) {
-            throw new Exception('Insufficient stock (batch validation)');
-        }
-
-        // Deduct from batches FIFO
+        $batches = fetch_available_stock_batches($conn, $productId);
         $remainingQty = $quantity;
+        $outStmt = $conn->prepare("INSERT INTO stock_movements (product_id, movement_type, quantity, expiration_date, batch_reference, created_by) VALUES (?, 'OUT', ?, ?, ?, ?)");
         foreach ($batches as $batch) {
-            if ($remainingQty <= 0) break;
-
-            if ($batch['quantity'] <= $remainingQty) {
-                // Entire batch is used
-                $used = $batch['quantity'];
-                $updateBatchStmt = $conn->prepare("UPDATE stock_movements SET quantity = 0 WHERE id = ?");
-                $updateBatchStmt->bind_param("i", $batch['id']);
-                $updateBatchStmt->execute();
-                $updateBatchStmt->close();
-                $remainingQty -= $used;
-            } else {
-                // Partial batch used
-                $used = $remainingQty;
-                $newQty = $batch['quantity'] - $used;
-                $updateBatchStmt = $conn->prepare("UPDATE stock_movements SET quantity = ? WHERE id = ?");
-                $updateBatchStmt->bind_param("ii", $newQty, $batch['id']);
-                $updateBatchStmt->execute();
-                $updateBatchStmt->close();
-                $remainingQty = 0;
+            if ($remainingQty <= 0) {
+                break;
             }
+            $available = (int)$batch['available_qty'];
+            if ($available <= 0) {
+                continue;
+            }
+            $used = min($available, $remainingQty);
+            $expiration = $batch['expiration_date'] ?: null;
+            $batchKey = (string)$batch['batch_key'];
+            $outStmt->bind_param('iissi', $productId, $used, $expiration, $batchKey, $cashierId);
+            $outStmt->execute();
+            $remainingQty -= $used;
         }
-
-        // Record stock out movement
-        $outBatchRef = 'OUT-' . date('YmdHis') . '-' . substr((string)mt_rand(1000, 9999), -4);
-        $outStmt = $conn->prepare("INSERT INTO stock_movements (product_id, movement_type, quantity, batch_reference, created_by) VALUES (?, 'OUT', ?, ?, ?)");
-        $outStmt->bind_param("iisi", $productId, $quantity, $outBatchRef, $cashierId);
-        $outStmt->execute();
+        if ($remainingQty > 0) {
+            $legacyRef = 'LEGACY-BAL-' . $productId;
+            $nullExp = null;
+            $outStmt->bind_param('iissi', $productId, $remainingQty, $nullExp, $legacyRef, $cashierId);
+            $outStmt->execute();
+        }
         $outStmt->close();
 
         // Update inventory total

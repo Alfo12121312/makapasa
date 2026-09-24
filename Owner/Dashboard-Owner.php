@@ -22,16 +22,8 @@ $stats = [
     'low_stock' => 0
 ];
 
-/* $conn->query("CREATE TABLE IF NOT EXISTS employees (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    employee_code VARCHAR(30) NOT NULL UNIQUE,
-    full_name VARCHAR(120) NOT NULL,
-    position VARCHAR(80) NOT NULL,
-    monthly_salary DECIMAL(12,2) NOT NULL DEFAULT 0,
-    daily_rate DECIMAL(12,2) NOT NULL DEFAULT 0,
-    status ENUM('Active','Inactive') DEFAULT 'Active',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)"); */
+/* employees table schema lives in includes/app.php (bootstrapped on every
+   page, including migrations) — not redefined here. */
 
 $productSql = "SELECT COUNT(*) AS total_products,
                       SUM(CASE WHEN stock_quantity < 10 THEN 1 ELSE 0 END) AS low_stock_items
@@ -59,32 +51,14 @@ if ($salesRes && $salesRes->num_rows > 0) {
     $row = $salesRes->fetch_assoc();
     $stats['today_sales'] = (float)$row['today_sales'];
 }
+
+$context = 'owner';
+$page_title = 'Dashboard';
+$breadcrumb = ['Dashboard'];
+$active = 'Dashboard-Owner.php';
+$role_title = 'Owner';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Owner Dashboard</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-    <?php render_sidebar('Owner', 'Dashboard-Owner.php', 'Owner'); ?>
-<!-- <div class="sidebar">
-    <button class="menu-toggle" onclick="toggleSidebar()">&#9776;</button>
-    <h2 class="title">Agrivet Owner</h2>
-    <img src="../assets/logo.png" alt="Logo" class="logo">
-     <ul>
-        <li class="active"><a href="Dashboard-Owner.php">Dashboard</a></li>
-        <li><a href="Inventory.php">Inventory</a></li>
-        <li><a href="HR-Summary.php">HR Summary</a></li>
-        <li><a href="Sales-ReportOwner.php">Sales Report</a></li>
-        <li><a href="../logout.php">Logout</a></li>
-    </ul> -->
-</div>
-
-<div class="userAdmin">
     <div class="page-header">
         <div>
             <h1>Owner Dashboard</h1>
@@ -135,10 +109,7 @@ if ($salesRes && $salesRes->num_rows > 0) {
             </table>
         </div>
     </div>
-</div>
 
-<script src="../script.js"></script>
-</body>
-</html>
-
-<?php $conn->close(); ?>
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

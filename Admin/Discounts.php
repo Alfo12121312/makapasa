@@ -15,6 +15,11 @@ require_roles(['Admin'], '../Login.php');
 
 $conn = app_connect();
 
+// Verify CSRF token for all POST requests
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_discount'])) {
     $name = trim($_POST['name']);
     $discountType = in_array($_POST['discount_type'] ?? '', ['percentage', 'fixed'], true) ? $_POST['discount_type'] : 'percentage';
@@ -41,7 +46,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_discount'])) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_discount'])) {
     $id = (int)$_POST['discount_id'];
-    $conn->query("UPDATE discount_rules SET is_active = IF(is_active = 1, 0, 1) WHERE id = {$id}");
+    $stmt = $conn->prepare("UPDATE discount_rules SET is_active = IF(is_active = 1, 0, 1) WHERE id = ?");
+    $stmt->bind_param('i', $id);
+    $stmt->execute();
+    $stmt->close();
 }
 
 $products = $conn->query("SELECT id, product_name FROM inventory WHERE status = 'Active' ORDER BY product_name ASC");
@@ -49,18 +57,12 @@ $discounts = $conn->query("SELECT d.*, i.product_name
                            FROM discount_rules d
                            LEFT JOIN inventory i ON i.id = d.product_id
                            ORDER BY d.created_at DESC");
+
+$page_title = 'Discounts';
+$breadcrumb = ['Sales', 'Discounts'];
+$active = 'Discounts.php';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discounts</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-<?php render_sidebar('admin', 'Discounts.php', 'Admin'); ?>
-<div class="userAdmin">
     <div class="page-header">
         <div>
             <h1>Discounts and Promotions</h1>
@@ -70,6 +72,7 @@ $discounts = $conn->query("SELECT d.*, i.product_name
     <div class="form-container">
         <h2>Create Promotion</h2>
         <form method="post">
+            <?php csrf_field(); ?>
             <input type="text" name="name" placeholder="Promotion Name" required>
             <select name="discount_type" required>
                 <option value="percentage">Percentage</option>
@@ -112,6 +115,7 @@ $discounts = $conn->query("SELECT d.*, i.product_name
                     <td><?php echo (int)($row['cashier_selectable'] ?? 0) === 1 ? 'Yes (Radio)' : 'No'; ?></td>
                     <td>
                         <form method="post">
+                            <?php csrf_field(); ?>
                             <input type="hidden" name="discount_id" value="<?php echo (int)$row['id']; ?>">
                             <button type="submit" name="toggle_discount" class="status-btn"><?php echo (int)$row['is_active'] === 1 ? 'Disable' : 'Enable'; ?></button>
                         </form>
@@ -123,7 +127,7 @@ $discounts = $conn->query("SELECT d.*, i.product_name
             </tbody>
         </table>
     </div>
-</div>
-<script src="../script.js"></script>
-</body>
-</html>
+
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

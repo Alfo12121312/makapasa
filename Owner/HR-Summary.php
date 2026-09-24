@@ -14,26 +14,8 @@ require_once __DIR__ . "/../includes/app.php";
 
 $conn = app_connect();
 
-/* $conn->query("CREATE TABLE IF NOT EXISTS employees (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    employee_code VARCHAR(30) NOT NULL UNIQUE,
-    full_name VARCHAR(120) NOT NULL,
-    position VARCHAR(80) NOT NULL,
-    monthly_salary DECIMAL(12,2) NOT NULL DEFAULT 0,
-    daily_rate DECIMAL(12,2) NOT NULL DEFAULT 0,
-    status ENUM('Active','Inactive') DEFAULT 'Active',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)");
-$conn->query("CREATE TABLE IF NOT EXISTS attendance (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    employee_id INT NOT NULL,
-    attendance_date DATE NOT NULL,
-    time_in DATETIME NULL,
-    time_out DATETIME NULL,
-    total_hours DECIMAL(8,2) NOT NULL DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uniq_employee_day (employee_id, attendance_date)
-)"); */
+/* employees/attendance table schemas live in includes/app.php (bootstrapped
+   on every page, including migrations) — not redefined here. */
 
 $metrics = ['employees' => 0, 'present_today' => 0, 'hours_today' => 0, 'payroll_estimate' => 0];
 $r = $conn->query("SELECT COUNT(*) c FROM employees WHERE status='Active'");
@@ -52,30 +34,14 @@ $summary = $conn->query("SELECT e.full_name, e.position, a.attendance_date, a.ti
                          JOIN employees e ON e.id = a.employee_id
                          ORDER BY a.attendance_date DESC, e.full_name ASC
                          LIMIT 150");
+
+$context = 'owner';
+$page_title = 'HR Summary';
+$breadcrumb = ['HR', 'Summary'];
+$active = 'HR-Summary.php';
+$role_title = 'Owner';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Owner HR Summary</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-    <?php render_sidebar('owner', 'HR-Summary.php', 'Owner'); ?>
-<!-- <div class="sidebar">
-    <button class="menu-toggle" onclick="toggleSidebar()">&#9776;</button>
-    <h2 class="title">Agrivet Owner</h2>
-    <img src="../assets/logo.png" alt="Logo" class="logo">
-    <ul>
-        <li><a href="Dashboard-Owner.php">Dashboard</a></li>
-        <li><a href="Inventory.php">Inventory</a></li>
-        <li class="active"><a href="HR-Summary.php">HR Summary</a></li>
-        <li><a href="../Sales-Report.php">Sales Report</a></li>
-        <li><a href="../logout.php">Logout</a></li>
-    </ul>
-</div> -->
-<div class="userAdmin">
     <div class="page-header">
         <div>
             <h1>HR Summary</h1>
@@ -112,8 +78,7 @@ $summary = $conn->query("SELECT e.full_name, e.position, a.attendance_date, a.ti
             </table>
         </div>
     </div>
-</div>
-<script src="../script.js"></script>
-</body>
-</html>
-<?php $conn->close(); ?>
+
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

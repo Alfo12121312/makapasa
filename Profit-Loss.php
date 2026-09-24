@@ -51,18 +51,13 @@ $totalSales = (float)$sales['total_sales'];
 $totalCOGS = (float)$cogs['total_cogs'];
 $totalExpenses = (float)$expenses['total_expenses'];
 $netProfit = $totalSales - $totalCOGS - $totalExpenses - $payrollExpense - $statutoryExpense;
+
+$context = 'root';
+$page_title = 'Profit & Loss';
+$breadcrumb = ['Reports', 'Profit & Loss'];
+$active = 'Profit-Loss.php';
+require_once __DIR__ . '/includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Profit and Loss</title>
-    <link rel="stylesheet" href="style.css">
-</head>
-<body>
-<?php render_sidebar('root', 'Profit-Loss.php', auth_user_role()); ?>
-<div class="userAdmin">
     <div class="page-header">
         <div>
             <h1>Profit and Loss</h1>
@@ -83,7 +78,8 @@ $netProfit = $totalSales - $totalCOGS - $totalExpenses - $payrollExpense - $stat
         <div class="stat-card"><div class="label">Statutory Expense</div><div class="value">PHP <?php echo number_format($statutoryExpense, 2); ?></div></div>
         <div class="stat-card"><div class="label">Net Profit</div><div class="value">PHP <?php echo number_format($netProfit, 2); ?></div></div>
     </div>
-</div>
-<script src="script.js"></script>
-</body>
-</html>
+
+<?php
+require_once __DIR__ . '/includes/footer.php';
+$conn->close();
+

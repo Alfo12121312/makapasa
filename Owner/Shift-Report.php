@@ -20,18 +20,14 @@ $stmt->bind_param("s", $month);
 $stmt->execute();
 $sessions = $stmt->get_result();
 $stmt->close();
+
+$context = 'owner';
+$page_title = 'Shift Reports';
+$breadcrumb = ['Reports', 'Shifts'];
+$active = 'Shift-Report.php';
+$role_title = 'Owner';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shift Reports</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-<?php render_sidebar('owner', 'Shift-Report.php', 'Owner'); ?>
-<div class="userAdmin">
     <h1>Shift Reports</h1>
     <p>Read-only cashier shift and cash reconciliation summary.</p>
     <div class="report-filters">
@@ -61,7 +57,7 @@ $stmt->close();
             </tbody>
         </table>
     </div>
-</div>
-<script src="../script.js"></script>
-</body>
-</html>
+
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

@@ -20,19 +20,7 @@ $can_edit = true;
 $can_toggle = true;
 
 
-// Database configuration
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "agrivet_db";
-
-// Create connection
-$conn = new mysqli($servername, $username, $password, $dbname);
-
-// Check connection
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
+$conn = app_connect();
 
 // Auto process expired batches by creating stock-out entries for expired stock
 process_auto_expiration($conn, auth_user_id());
@@ -86,13 +74,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['transfer_type'])) {
         $stmt->bind_param("si", $inventory_type, $product_id);
 
         if ($stmt->execute()) {
-            $success_message = "Inventory type transferred successfully!";
+            flash_success("Inventory type transferred successfully!");
         } else {
-            $error_message = "Error transferring inventory type: " . $stmt->error;
+            flash_error("Error transferring inventory type: " . $stmt->error);
         }
         $stmt->close();
     } else {
-        $error_message = "Invalid inventory type selected.";
+        flash_error("Invalid inventory type selected.");
     }
 }
 
@@ -112,13 +100,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['edit_product'])) {
         $stmt->bind_param("sssidsis", $product_name, $category, $supplier, $stock_quantity, $price, $product_unit, $inventory_type, $product_id);
 
         if ($stmt->execute()) {
-            $success_message = "Product updated successfully!";
+            flash_success("Product updated successfully!");
         } else {
-            $error_message = "Error updating product: " . $stmt->error;
+            flash_error("Error updating product: " . $stmt->error);
         }
         $stmt->close();
     } else {
-        $error_message = "Product name is required, quantity and price must be non-negative, and inventory type must be valid!";
+        flash_error("Product name is required, quantity and price must be non-negative, and inventory type must be valid!");
     }
 }
 
@@ -132,13 +120,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_stock'])) {
         $stmt->bind_param("ii", $new_quantity, $product_id);
 
         if ($stmt->execute()) {
-            $success_message = "Stock updated successfully!";
+            flash_success("Stock updated successfully!");
         } else {
-            $error_message = "Error updating stock: " . $stmt->error;
+            flash_error("Error updating stock: " . $stmt->error);
         }
         $stmt->close();
     } else {
-        $error_message = "Quantity must be non-negative!";
+        flash_error("Quantity must be non-negative!");
     }
 }
 
@@ -152,9 +140,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['toggle_status'])) {
     $stmt->bind_param("si", $new_status, $product_id);
 
     if ($stmt->execute()) {
-        $success_message = "Product status updated successfully!";
+        flash_success("Product status updated successfully!");
     } else {
-        $error_message = "Error updating status: " . $stmt->error;
+        flash_error("Error updating status: " . $stmt->error);
     }
     $stmt->close();
 }
@@ -181,13 +169,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['stock_in'])) {
             $updateStmt->bind_param("isddi", $quantity, $product_unit, $retail_price, $cost_price, $product_id);
             $updateStmt->execute();
             $updateStmt->close();
-            $success_message = "Stock added successfully! Batch: {$batch_ref}";
+            flash_success("Stock added successfully! Batch: {$batch_ref}");
         } else {
-            $error_message = "Error recording stock in: " . $stmt->error;
+            flash_error("Error recording stock in: " . $stmt->error);
             $stmt->close();
         }
     } else {
-        $error_message = "Quantity must be greater than 0, prices must be non-negative, and valid unit must be selected!";
+        flash_error("Quantity must be greater than 0, prices must be non-negative, and valid unit must be selected!");
     }
 }
 
@@ -208,88 +196,63 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['stock_out'])) {
 
         // Validate that we won't go negative
         if ($currentStock < $quantity_out) {
-            $error_message = "Insufficient stock! Available: {$currentStock}, Requested: {$quantity_out}";
+            flash_error("Insufficient stock! Available: {$currentStock}, Requested: {$quantity_out}");
         } else {
-            // Get all available stock for this product ordered by expiration (FIFO)
-            $batches = $conn->query("SELECT id, quantity, expiration_date FROM stock_movements 
-                                     WHERE product_id = $product_id AND movement_type = 'IN' 
-                                     ORDER BY expiration_date ASC, created_at ASC");
+            // Compute remaining quantity per batch from stock_movements (IN - OUT),
+            // ordered FIFO by expiration date. IN rows are never mutated — the
+            // remaining quantity per batch is always derived, not stored.
+            $batchList = fetch_available_stock_batches($conn, $product_id);
+            $totalAvailable = 0;
+            foreach ($batchList as $batch) {
+                $totalAvailable += (int)$batch['available_qty'];
+            }
 
-            if (!$batches) {
-                $error_message = "Error retrieving stock batches: " . $conn->error;
+            if ($totalAvailable < $quantity_out) {
+                flash_error("Insufficient stock! Available: {$totalAvailable}, Requested: {$quantity_out}");
             } else {
-                $remaining_qty = $quantity_out;
-                $totalAvailable = 0;
-                $batchList = [];
-                
-                while ($batch = $batches->fetch_assoc()) {
-                    if ($batch['quantity'] > 0) {
-                        $totalAvailable += $batch['quantity'];
-                        $batchList[] = $batch;
-                    }
-                }
-
-                if ($totalAvailable < $quantity_out) {
-                    $error_message = "Insufficient stock! Available: {$totalAvailable}, Requested: {$quantity_out}";
-                } else {
                 $conn->begin_transaction();
                 try {
+                    $remaining_qty = $quantity_out;
+                    $userId = auth_user_id();
+                    $note = 'Manual stock-out (FIFO)';
+                    $outStmt = $conn->prepare("INSERT INTO stock_movements (product_id, movement_type, quantity, expiration_date, batch_reference, notes, created_by) VALUES (?, 'OUT', ?, ?, ?, ?, ?)");
+
                     foreach ($batchList as $batch) {
                         if ($remaining_qty <= 0) break;
 
-                        if ($batch['quantity'] <= $remaining_qty) {
-                            // Entire batch is used
-                            $used = $batch['quantity'];
-                            $stmt = $conn->prepare("UPDATE stock_movements SET quantity = 0 WHERE id = ?");
-                            $stmt->bind_param("i", $batch['id']);
-                            $stmt->execute();
-                            $stmt->close();
-                            $remaining_qty -= $used;
-                        } else {
-                            // Partial batch used
-                            $used = $remaining_qty;
-                            $newQty = $batch['quantity'] - $used;
-                            $stmt = $conn->prepare("UPDATE stock_movements SET quantity = ? WHERE id = ?");
-                            $stmt->bind_param("ii", $newQty, $batch['id']);
-                            $stmt->execute();
-                            $stmt->close();
-                            $remaining_qty = 0;
-                        }
+                        $available = (int)$batch['available_qty'];
+                        if ($available <= 0) continue;
+
+                        // One OUT row per batch consumed, tagged with that batch's own
+                        // reference — this is what keeps get_product_stock_from_batches(),
+                        // get_product_expiration_batches(), and fetch_available_stock_batches()
+                        // (all IN-minus-OUT) accurate without ever touching the IN row.
+                        $used = min($available, $remaining_qty);
+                        $expiration = $batch['expiration_date'] ?: null;
+                        $batchKey = (string)$batch['batch_key'];
+                        $outStmt->bind_param('iisssi', $product_id, $used, $expiration, $batchKey, $note, $userId);
+                        $outStmt->execute();
+                        $remaining_qty -= $used;
                     }
+                    $outStmt->close();
 
-                    // Record the stock out movement
-                    $userId = auth_user_id();
-                    $batch_ref = 'OUT-' . date('YmdHis') . '-' . substr((string)mt_rand(1000, 9999), -4);
-                    $stmt = $conn->prepare("INSERT INTO stock_movements (product_id, movement_type, quantity, batch_reference, created_by) VALUES (?, 'OUT', ?, ?, ?)");
-                    $stmt->bind_param("iisi", $product_id, $quantity_out, $batch_ref, $userId);
-                    $stmt->execute();
-                    $stmt->close();
-
-                    // Update inventory total - ensure it doesn't go below 0
-                    $checkStmt = $conn->prepare("SELECT stock_quantity FROM inventory WHERE id = ?");
-                    $checkStmt->bind_param("i", $product_id);
-                    $checkStmt->execute();
-                    $checkResult = $checkStmt->get_result();
-                    $currentStock = $checkResult->fetch_assoc();
-                    $checkStmt->close();
-                    
-                    $newStock = max(0, (int)$currentStock['stock_quantity'] - $quantity_out);
+                    // Update inventory total (denormalized cache) - ensure it doesn't go below 0
+                    $newStock = max(0, $currentStock - $quantity_out);
                     $updateStmt = $conn->prepare("UPDATE inventory SET stock_quantity = ? WHERE id = ?");
                     $updateStmt->bind_param("ii", $newStock, $product_id);
                     $updateStmt->execute();
                     $updateStmt->close();
 
                     $conn->commit();
-                    $success_message = "Stock removed successfully (FIFO)! Reference: {$batch_ref}";
+                    flash_success("Stock removed successfully (FIFO)!");
                 } catch (Exception $e) {
                     $conn->rollback();
-                    $error_message = "Error removing stock: " . $e->getMessage();
-                }
+                    flash_error("Error removing stock: " . $e->getMessage());
                 }
             }
         }
     } else {
-        $error_message = "Quantity must be greater than 0!";
+        flash_error("Quantity must be greater than 0!");
     }
 }
 
@@ -297,65 +260,82 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['stock_out'])) {
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['archive_batch'])) {
     $batch_id = (int)$_POST['batch_id'];
     $product_id = (int)$_POST['product_id'];
-    
-    // Get batch details to check if it's expired and get quantity
-    $batchStmt = $conn->prepare("SELECT quantity, expiration_date FROM stock_movements WHERE id = ? AND movement_type = 'IN'");
+
+    // Get batch details to check if it's expired
+    $batchStmt = $conn->prepare("SELECT batch_reference, expiration_date FROM stock_movements WHERE id = ? AND movement_type = 'IN'");
     $batchStmt->bind_param("i", $batch_id);
     $batchStmt->execute();
     $batchResult = $batchStmt->get_result();
-    
+
     if ($batchResult->num_rows === 0) {
-        $error_message = "Batch not found!";
+        flash_error("Batch not found!");
+        $batchStmt->close();
     } else {
         $batch = $batchResult->fetch_assoc();
-        
+        $batchStmt->close();
+
         // Check if batch is expired
         if ($batch['expiration_date'] && strtotime($batch['expiration_date']) < time()) {
-            $conn->begin_transaction();
-            try {
-                // Record stock out for the expired batch
-                $userId = auth_user_id();
-                $batch_ref = 'EXPIRED-' . date('YmdHis') . '-' . substr((string)mt_rand(1000, 9999), -4);
-                $stmt = $conn->prepare("INSERT INTO stock_movements (product_id, movement_type, quantity, batch_reference, notes, created_by) VALUES (?, 'OUT', ?, ?, ?, ?)");
-                $expiredNote = "Archived expired batch (ID: " . $batch_id . ")";
-                $stmt->bind_param("iissi", $product_id, $batch['quantity'], $batch_ref, $expiredNote, $userId);
-                $stmt->execute();
-                $stmt->close();
-                
-                // Set batch quantity to 0 (archive)
-                $zeroQty = 0;
-                $archiveStmt = $conn->prepare("UPDATE stock_movements SET quantity = ? WHERE id = ?");
-                $archiveStmt->bind_param("ii", $zeroQty, $batch_id);
-                $archiveStmt->execute();
-                $archiveStmt->close();
-                
-                // Update inventory total
-                $updateStmt = $conn->prepare("UPDATE inventory SET stock_quantity = stock_quantity - ? WHERE id = ?");
-                $updateStmt->bind_param("ii", $batch['quantity'], $product_id);
-                $updateStmt->execute();
-                $updateStmt->close();
-                
-                $conn->commit();
-                $success_message = "Expired batch archived successfully!";
-            } catch (Exception $e) {
-                $conn->rollback();
-                $error_message = "Error archiving batch: " . $e->getMessage();
+            // Compute what's actually still remaining in THIS batch (IN - OUT for its
+            // own batch_reference) rather than assuming the original received quantity
+            // is still all there — some of it may have already been sold.
+            $batchRef = $batch['batch_reference'];
+            $remainStmt = $conn->prepare("SELECT COALESCE(SUM(CASE WHEN movement_type = 'IN' THEN quantity ELSE -quantity END), 0) AS remaining_qty
+                                           FROM stock_movements WHERE product_id = ? AND batch_reference = ?");
+            $remainStmt->bind_param("is", $product_id, $batchRef);
+            $remainStmt->execute();
+            $remainingQty = (int)($remainStmt->get_result()->fetch_assoc()['remaining_qty'] ?? 0);
+            $remainStmt->close();
+
+            if ($remainingQty <= 0) {
+                flash_error("This batch has no remaining stock to archive.");
+            } else {
+                $conn->begin_transaction();
+                try {
+                    // Record stock out for what's left of the expired batch, tagged
+                    // with the SAME batch_reference so this batch nets to zero
+                    // everywhere it's looked up (IN rows are never mutated).
+                    $userId = auth_user_id();
+                    $expiredNote = "Archived expired batch (batch: " . $batchRef . ")";
+                    $stmt = $conn->prepare("INSERT INTO stock_movements (product_id, movement_type, quantity, expiration_date, batch_reference, notes, created_by) VALUES (?, 'OUT', ?, ?, ?, ?, ?)");
+                    $stmt->bind_param("iisssi", $product_id, $remainingQty, $batch['expiration_date'], $batchRef, $expiredNote, $userId);
+                    $stmt->execute();
+                    $stmt->close();
+
+                    // Update inventory total (denormalized cache)
+                    $updateStmt = $conn->prepare("UPDATE inventory SET stock_quantity = GREATEST(0, stock_quantity - ?) WHERE id = ?");
+                    $updateStmt->bind_param("ii", $remainingQty, $product_id);
+                    $updateStmt->execute();
+                    $updateStmt->close();
+
+                    $conn->commit();
+                    flash_success("Expired batch archived successfully!");
+                } catch (Exception $e) {
+                    $conn->rollback();
+                    flash_error("Error archiving batch: " . $e->getMessage());
+                }
             }
         } else {
-            $error_message = "This batch is not expired yet!";
+            flash_error("This batch is not expired yet!");
         }
     }
-    $batchStmt->close();
 }
 
 // Handle AJAX request for batch details
 if ($_SERVER["REQUEST_METHOD"] == "GET" && isset($_GET['action']) && $_GET['action'] === 'get_batches') {
     header('Content-Type: application/json');
     $product_id = (int)$_GET['product_id'];
-    
-    $stmt = $conn->prepare("SELECT id, product_id, quantity, cost_price, expiration_date, batch_reference, created_at FROM stock_movements 
-                            WHERE product_id = ? AND movement_type = 'IN' 
-                            ORDER BY expiration_date ASC, created_at ASC");
+
+    // Remaining quantity per batch is always derived as IN - OUT for that
+    // batch_reference — IN rows are never mutated, so this is the only
+    // correct way to know what's left in a given batch.
+    $stmt = $conn->prepare("SELECT sm.id, sm.product_id, sm.cost_price, sm.expiration_date, sm.batch_reference, sm.created_at,
+                                    (SELECT COALESCE(SUM(CASE WHEN movement_type = 'IN' THEN quantity ELSE -quantity END), 0)
+                                       FROM stock_movements
+                                       WHERE product_id = sm.product_id AND batch_reference = sm.batch_reference) AS remaining_qty
+                             FROM stock_movements sm
+                             WHERE sm.product_id = ? AND sm.movement_type = 'IN'
+                             ORDER BY sm.expiration_date ASC, sm.created_at ASC");
     $stmt->bind_param("i", $product_id);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -366,7 +346,7 @@ if ($_SERVER["REQUEST_METHOD"] == "GET" && isset($_GET['action']) && $_GET['acti
             'id' => $batch['id'],
             'product_id' => $batch['product_id'],
             'batch_reference' => $batch['batch_reference'],
-            'quantity' => (int)$batch['quantity'],
+            'quantity' => (int)$batch['remaining_qty'],
             'cost_price' => (float)$batch['cost_price'],
             'expiration_date' => $batch['expiration_date'],
             'created_at' => date('Y-m-d', strtotime($batch['created_at']))
@@ -463,44 +443,14 @@ $categories_result = $conn->query($categories_sql);
 
 $suppliers_sql = "SELECT DISTINCT supplier FROM inventory WHERE status = 'Active' AND supplier IS NOT NULL ORDER BY supplier ASC";
 $suppliers_result = $conn->query($suppliers_sql);
+
+$page_title = 'Inventory';
+$breadcrumb = ['Inventory', 'Stock'];
+$active = 'Inventory.php';
+require_once __DIR__ . '/../includes/header.php';
 ?>
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inventory Management</title>
-    <link rel="stylesheet" href="../style.css">
-    <style>
-
-        /* .low-stock{
-            background-color:rgba(255, 17, 0, 0.38);
-
-        }
-        .low-stock-yellow{
-            background-color:rgba(229, 255, 0, 0.43);
-        } */
-    </style>
-</head>
-<body>
-<?php render_sidebar('admin', 'Inventory.php', 'Admin'); ?>
-
-<!-- Main Content -->
-<div class="userAdmin">
-
-<h1>Inventory Management</h1>
-<p>Monitor stock levels and manage inventory here. Use Manage Product for product details.</p>
-
-<?php if (isset($success_message)): ?>
-    <div class="message success"><?php echo $success_message; ?></div>
-<?php endif; ?>
-
-<?php if (isset($error_message)): ?>
-    <div class="message error"><?php echo $error_message; ?></div>
-<?php endif; ?>
-
-<!-- <p>Use Manage Product to add new products.Here you can transfer existing inventory items between Display and Warehouse.</p>  -->
+<?php render_page_heading('Inventory', 'Monitor stock levels and manage inventory here. Use Products for product details.'); ?>
 
 <!-- Search and Filter Controls -->
 <div class="search-filter-container">
@@ -674,10 +624,10 @@ $suppliers_result = $conn->query($suppliers_sql);
     </div>
 </div>
 
-<div class="Legend">
+<!-- <div class="Legend">
     <div class="item"><span class="status-dot dot-out"></span>Out of Stock</div>
     <div class="item"><span class="status-dot dot-low"></span>Low Stock</div>
-    <div class="item"><span class="status-dot dot-ok"></span>In Stock</div>
+    <div class="item"><span class="status-dot dot-ok"></span>In Stock</div> -->
 <!-- <style>
     .box {
     display: inline-block;
@@ -691,63 +641,69 @@ $suppliers_result = $conn->query($suppliers_sql);
 
 <!-- Products Table -->
 <h2>Current Inventory</h2>
-<?php if ($result->num_rows > 0): ?>
+<div class="app-table-wrapper">
     <table id="inventoryTable" class="userTable">
         <thead>
             <tr>
-                <!-- <th>ID</th> -->
                 <th>Product Name</th>
                 <th>Category</th>
-                <!-- <th>Supplier</th>
-                <th>Type</th> -->
                 <th>Stock Quantity</th>
                 <th>Unit</th>
                 <th>Retail Price</th>
                 <th>Expiration Date</th>
                 <?php if ($can_edit): ?>
                 <th>Stock Status</th>
-                <th>Actions</th>
+                <th style="width:56px;"></th>
                 <?php endif; ?>
             </tr>
         </thead>
         <tbody>
-            <?php while($row = $result->fetch_assoc()): ?>
-            <tr>
-            
-                <td><?php echo htmlspecialchars($row['product_name']); ?></td>
-                <td><?php echo htmlspecialchars($row['category']); ?></td>
-                <!-- <td><?php echo htmlspecialchars($row['supplier']); ?></td>
-                <td><?php echo htmlspecialchars($row['inventory_type']); ?></td> -->
-                <td><?php echo $row['stock_quantity']; ?></td>
-                <td><?php echo $row['product_unit']; ?></td>
-                <td>₱<?php echo number_format($row['price'], 2); ?></td>
-                <td><?php echo $row['expiration_date'] ? $row['expiration_date'] : 'N/A'; ?></td>
-                <td>
-                    <?php
-                        $quantity = (int)$row['stock_quantity'];
-                        if ($quantity <= 0) {
-                            echo "<span class='status-dot dot-out'></span>Out of Stock";
-                        } elseif ($quantity < 10) {
-                            echo "<span class='status-dot dot-low'></span>Low Stock";
-                        } else {
-                            echo "<span class='status-dot dot-ok'></span>In Stock";
-                        }
-                    ?>
-                </td>
-                <td>
-                    <button type="button" class="action-btn" onclick="openStockIn(<?php echo (int)$row['id']; ?>, '<?php echo htmlspecialchars($row['product_name'], ENT_QUOTES); ?>')">Stock In</button>
-                    <button type="button" class="action-btn" onclick="openStockOut(<?php echo (int)$row['id']; ?>, '<?php echo htmlspecialchars($row['product_name'], ENT_QUOTES); ?>', <?php echo (int)$row['stock_quantity']; ?>)">Stock Out</button>
-                    <button type="button" class="action-btn" onclick="openBatchDetails(<?php echo (int)$row['id']; ?>, '<?php echo htmlspecialchars($row['product_name'], ENT_QUOTES); ?>')">Batches</button>
-                </td>
-
-
-            </tr>
-            <?php endwhile; ?>
+            <?php if ($result->num_rows > 0): ?>
+                <?php while($row = $result->fetch_assoc()): ?>
+                <tr>
+                    <td><?php echo htmlspecialchars($row['product_name']); ?></td>
+                    <td><?php echo htmlspecialchars($row['category']); ?></td>
+                    <td><?php echo $row['stock_quantity']; ?></td>
+                    <td><?php echo $row['product_unit']; ?></td>
+                    <td>₱<?php echo number_format($row['price'], 2); ?></td>
+                    <td><?php echo $row['expiration_date'] ? $row['expiration_date'] : 'N/A'; ?></td>
+                    <td>
+                        <?php
+                            $quantity = (int)$row['stock_quantity'];
+                            if ($quantity <= 0) {
+                                echo "<span class='pill pill-danger'>Out of Stock</span>";
+                            } elseif ($quantity < 10) {
+                                echo "<span class='pill pill-warning'>Low Stock</span>";
+                            } else {
+                                echo "<span class='pill pill-success'>In Stock</span>";
+                            }
+                        ?>
+                    </td>
+                    <td>
+                        <div class="row-menu">
+                            <button type="button" class="row-menu-trigger" aria-label="Row actions">⋮</button>
+                            <div class="row-menu-list">
+                                <button type="button" onclick="openStockIn(<?php echo (int)$row['id']; ?>, '<?php echo htmlspecialchars($row['product_name'], ENT_QUOTES); ?>')">Stock In</button>
+                                <button type="button" onclick="openStockOut(<?php echo (int)$row['id']; ?>, '<?php echo htmlspecialchars($row['product_name'], ENT_QUOTES); ?>', <?php echo (int)$row['stock_quantity']; ?>)">Stock Out</button>
+                                <button type="button" onclick="openBatchDetails(<?php echo (int)$row['id']; ?>, '<?php echo htmlspecialchars($row['product_name'], ENT_QUOTES); ?>')">View Batches</button>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                <?php endwhile; ?>
+            <?php else: ?>
+                <tr data-empty-row><td colspan="8">
+                    <div class="app-empty-state">
+                        <div class="empty-icon">📦</div>
+                        <h3>No products in inventory yet</h3>
+                        <p>Add your first SKU from the Products page, then stock it in here.</p>
+                        <a href="Manage-Product.php" class="btn btn-primary">Go to Products</a>
+                    </div>
+                </td></tr>
+            <?php endif; ?>
         </tbody>
     </table>
-<?php else: ?>
-    <p>No products in inventory yet.</p>
-<?php endif; ?>
+</div>
 
 <!-- Edit Product Form (hidden by default) -->
 <?php if ($can_edit): ?>
@@ -812,9 +768,7 @@ $suppliers_result = $conn->query($suppliers_sql);
 </div>
 <?php endif; ?>
 
-</div>
-
-<script src="../script.js"></script>
+<?php ob_start(); ?>
 <script>
 function showTransferType(productId, currentType, productName) {
     document.getElementById('transfer_product_id').value = productId;
@@ -945,9 +899,7 @@ function archiveBatch(batchId, productId) {
     }
 }
 </script>
-</body>
-</html>
-
 <?php
+$extra_js = ob_get_clean();
+require_once __DIR__ . '/../includes/footer.php';
 $conn->close();
-?>

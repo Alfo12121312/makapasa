@@ -2,17 +2,9 @@
 /*
  * File: Admin/Users.php
  * Purpose: Manage user accounts (create, list, toggle status) and role-permission mapping.
- * Key locations:
- * - Bootstrap: `require_once __DIR__ . '/../includes/app.php';` at line 2
- * - Access control: `require_roles(...)` at line 3
- * - Uses central DB connection: `app_connect()` at line 8 (preferred over `new mysqli`).
- * Known issues / improvements:
- * - Good use of prepared statements for inserts/updates; ensure email uniqueness handling is explicit.
- * - Consider adding rate-limiting and password strength validation on user creation (see create user logic around lines 20-60).
  */
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['Admin'], '../Login.php');
-$user_role = auth_user_role();
 $can_create = true;
 $can_toggle = true;
 
@@ -46,34 +38,32 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['create_user'])) {
     $role = isset($_POST['role']) ? trim($_POST['role']) : '';
 
     if (!empty($username) && !empty($email) && !empty($password_raw) && !empty($role)) {
-        // validate role against dynamic list
         if (!in_array($role, $available_roles, true)) {
-            $error_message = "Invalid role selected.";
+            flash_error('Invalid role selected.');
         } else {
             $stmt = $conn->prepare("INSERT INTO users (username, email, password, role, status) VALUES (?, ?, ?, ?, 'Active')");
             if ($stmt) {
                 $stmt->bind_param("ssss", $username, $email, $password, $role);
                 if ($stmt->execute()) {
-                    $assigned_perms = isset($roles_map[$role]) && is_array($roles_map[$role]) ? $roles_map[$role] : [];
-                    $perm_list = implode(', ', $assigned_perms);
-                    $success_message = "User created successfully as $role.";
-                    if (!empty($perm_list)) $success_message .= " Permissions: " . $perm_list . ".";
+                    flash_success("User \"$username\" created successfully as $role.");
                 } else {
-                    $error_message = "Error: " . $stmt->error;
+                    flash_error("Error: " . $stmt->error);
                 }
                 $stmt->close();
             } else {
-                $error_message = "Database error preparing statement.";
+                flash_error("Database error preparing statement.");
             }
         }
     } else {
-        $error_message = "All fields are required!";
+        flash_error("All fields are required!");
     }
+    header('Location: Users.php');
+    exit;
 }
 
 // Handle status toggle
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['toggle_status'])) {
-    $user_id = $_POST['user_id'];
+    $user_id = (int)$_POST['user_id'];
     $current_status = $_POST['current_status'];
     $new_status = ($current_status == 'Active') ? 'Inactive' : 'Active';
 
@@ -81,45 +71,37 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['toggle_status'])) {
     $stmt->bind_param("si", $new_status, $user_id);
 
     if ($stmt->execute()) {
-        $success_message = "User status updated successfully!";
+        flash_success("User status updated to $new_status.");
     } else {
-        $error_message = "Error updating status: " . $stmt->error;
+        flash_error("Error updating status: " . $stmt->error);
     }
     $stmt->close();
+    header('Location: Users.php');
+    exit;
 }
 
 // Retrieve all users
 $sql = "SELECT id, username, email, role, status, created_at FROM users ORDER BY created_at DESC";
 $result = $conn->query($sql);
+$users = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
+
+$page_title = 'Users';
+$breadcrumb = ['Settings', 'Users'];
+$active = 'Users.php';
+require_once __DIR__ . '/../includes/header.php';
 ?>
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Agrivet Admin - Users</title>
-<link rel="stylesheet" href="../style.css">
-</head>
+<?php render_page_heading('Users', 'Manage who can sign in and what role they have.'); ?>
 
-<body>
-<?php render_sidebar('admin', 'Users.php', 'Admin'); ?>
+<div class="app-toolbar">
+    <div class="search-field">
+        <span class="search-icon">🔍</span>
+        <input type="text" placeholder="Search by username, email, or role…" data-app-search data-target="#usersTable" data-count-target="#usersCount">
+    </div>
+    <span class="toolbar-count" id="usersCount"><?php echo count($users); ?> rows</span>
+</div>
 
-<!-- user tables -->
-<div class="userAdmin">
-
-<h1>Users</h1>
-<p>Below is the list of registered users:</p>
-
-<?php if (isset($success_message)): ?>
-    <div class="message success"><?php echo $success_message; ?></div>
-<?php endif; ?>
-
-<?php if (isset($error_message)): ?>
-    <div class="message error"><?php echo $error_message; ?></div>
-<?php endif; ?>
-
-<div class="user-table-wrapper">
+<div class="app-table-wrapper">
 <table id="usersTable" class="userTable">
 <thead>
 <tr>
@@ -128,51 +110,57 @@ $result = $conn->query($sql);
 <th>Role</th>
 <th>Date Created</th>
 <th>Status</th>
-<?php if ($can_toggle): ?><th>Actions</th><?php endif; ?>
+<?php if ($can_toggle): ?><th style="width:56px;"></th><?php endif; ?>
 </tr>
 </thead>
 <tbody>
-
-<?php
-if ($result->num_rows > 0) {
-    while($row = $result->fetch_assoc()) {
-        $status_class = strtolower($row["status"]);
-        $action_btn_class = ($row["status"] == 'Active') ? 'deactivate-btn' : 'activate-btn';
-        $action_text = ($row["status"] == 'Active') ? 'Deactivate' : 'Activate';
-
-        echo "<tr>";
-        echo "<td>" . htmlspecialchars($row["username"]) . "</td>";
-        echo "<td>" . htmlspecialchars($row["email"]) . "</td>";
-        echo "<td>" . htmlspecialchars($row["role"]) . "</td>";
-        echo "<td>" . date('M d, Y H:i', strtotime($row["created_at"])) . "</td>";
-        echo "<td class='status $status_class'>" . htmlspecialchars($row["status"]) . "</td>";
-        echo "<td>";
-        if ($can_toggle) {
-            echo "<form method='POST' style='display:inline;'>
-                    <input type='hidden' name='user_id' value='" . $row["id"] . "'>
-                    <input type='hidden' name='current_status' value='" . $row["status"] . "'>
-                    <button type='submit' name='toggle_status' class='status-btn $action_btn_class'>$action_text</button>
-                </form>";
-        } else {
-            echo "View Only";
-        }
-        echo "</td>";
-        echo "</tr>";
-    }
-} else {
-    $colspan = $can_toggle ? 6 : 5;
-    echo "<tr><td colspan='$colspan'>No users found.";
-    if ($can_create) echo " Create your first user below.";
-    echo "</td></tr>";
-}
-?>
+<?php if (!empty($users)): ?>
+    <?php foreach ($users as $row): ?>
+        <tr>
+            <td><?php echo htmlspecialchars($row['username'], ENT_QUOTES, 'UTF-8'); ?></td>
+            <td><?php echo htmlspecialchars($row['email'], ENT_QUOTES, 'UTF-8'); ?></td>
+            <td><?php echo htmlspecialchars($row['role'], ENT_QUOTES, 'UTF-8'); ?></td>
+            <td><?php echo date('M d, Y H:i', strtotime($row['created_at'])); ?></td>
+            <td>
+                <?php if ($row['status'] === 'Active'): ?>
+                    <span class="pill pill-success">Active</span>
+                <?php else: ?>
+                    <span class="pill pill-neutral">Inactive</span>
+                <?php endif; ?>
+            </td>
+            <?php if ($can_toggle): ?>
+            <td>
+                <div class="row-menu">
+                    <button type="button" class="row-menu-trigger" aria-label="Row actions">⋮</button>
+                    <div class="row-menu-list">
+                        <form method="POST">
+                            <input type="hidden" name="user_id" value="<?php echo (int)$row['id']; ?>">
+                            <input type="hidden" name="current_status" value="<?php echo htmlspecialchars($row['status'], ENT_QUOTES, 'UTF-8'); ?>">
+                            <button type="submit" name="toggle_status" class="<?php echo $row['status'] === 'Active' ? 'danger' : ''; ?>">
+                                <?php echo $row['status'] === 'Active' ? 'Deactivate' : 'Activate'; ?>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </td>
+            <?php endif; ?>
+        </tr>
+    <?php endforeach; ?>
+<?php else: ?>
+    <tr data-empty-row><td colspan="<?php echo $can_toggle ? 6 : 5; ?>">
+        <div class="app-empty-state">
+            <div class="empty-icon">👤</div>
+            <h3>No users yet</h3>
+            <p><?php echo $can_create ? 'Create your first user below.' : 'No user accounts found.'; ?></p>
+        </div>
+    </td></tr>
+<?php endif; ?>
 </tbody>
 </table>
 </div>
 
-<!-- user create -->
 <?php if ($can_create): ?>
-<div class="form-container">
+<div class="form-container" style="margin-top:18px;">
 <h2>Add New User</h2>
 
 <form method="POST">
@@ -183,21 +171,15 @@ if ($result->num_rows > 0) {
 <select name="role" required>
     <option value="">Select Role</option>
     <?php foreach ($available_roles as $r): ?>
-        <option value="<?php echo htmlspecialchars($r); ?>"><?php echo htmlspecialchars($r); ?></option>
+        <option value="<?php echo htmlspecialchars($r, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($r, ENT_QUOTES, 'UTF-8'); ?></option>
     <?php endforeach; ?>
 </select>
 
-<button type="submit" name="create_user">Add User</button>
+<button type="submit" name="create_user" class="btn btn-primary">Add User</button>
 </form>
 </div>
 <?php endif; ?>
 
-</div>
-<script src="../script.js"></script>
-</body>
-
-</html>
-
 <?php
+require_once __DIR__ . '/../includes/footer.php';
 $conn->close();
-?>

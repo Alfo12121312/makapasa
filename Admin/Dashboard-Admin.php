@@ -15,28 +15,8 @@ require_roles(['System Admin', 'Manager'], '../Login.php');
 
 $conn = app_connect();
 
-/* $conn->query("CREATE TABLE IF NOT EXISTS employees (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    employee_code VARCHAR(30) NOT NULL UNIQUE,
-    full_name VARCHAR(120) NOT NULL,
-    position VARCHAR(80) NOT NULL,
-    monthly_salary DECIMAL(12,2) NOT NULL DEFAULT 0,
-    daily_rate DECIMAL(12,2) NOT NULL DEFAULT 0,
-    status ENUM('Active','Inactive') DEFAULT 'Active',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)");
-
-$conn->query("CREATE TABLE IF NOT EXISTS attendance (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    employee_id INT NOT NULL,
-    attendance_date DATE NOT NULL,
-    time_in DATETIME NULL,
-    time_out DATETIME NULL,
-    total_hours DECIMAL(8,2) NOT NULL DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uniq_employee_day (employee_id, attendance_date),
-    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
-)"); */
+/* employees/attendance table schemas live in includes/app.php (bootstrapped
+   on every page, including migrations) — not redefined here. */
 
 $stats = [
     'products' => 0,
@@ -51,19 +31,7 @@ $stats = [
     'payroll_expense' => 0,
     'statutory_share' => 0
 ];
-$healthChecks = [];
 $healthWarnings = [];
-
-$healthChecks['db_connection'] = true;
-$requiredTables = ['inventory', 'sales', 'employees', 'attendance'];
-foreach ($requiredTables as $tableName) {
-    $tableResult = $conn->query("SHOW TABLES LIKE '" . $conn->real_escape_string($tableName) . "'");
-    $tableOk = $tableResult && $tableResult->num_rows > 0;
-    $healthChecks['table_' . $tableName] = $tableOk;
-    if (!$tableOk) {
-        $healthWarnings[] = "Missing table: {$tableName}";
-    }
-}
 
 $res = $conn->query("SELECT COUNT(*) total_products,
                             SUM(CASE WHEN status='Active' THEN 1 ELSE 0 END) active_products,
@@ -126,22 +94,23 @@ if ($res && $res->num_rows > 0) {
     $healthWarnings[] = 'Attendance query failed.';
 }
 
-$currentMonth = date('Y-m');
-$monthStart = $currentMonth . '-01';
-$monthEnd = date('Y-m-t', strtotime($monthStart));
-$payrollStats = $conn->query("SELECT COALESCE(SUM(gross_salary), 0) payroll_expense, COALESCE(SUM(company_statutory_expense), 0) statutory_share
-                             FROM payroll_records
-                             WHERE period_start >= '$monthStart' AND period_end <= '$monthEnd'");
-if ($payrollStats && $payrollStats->num_rows > 0) {
-    $p = $payrollStats->fetch_assoc();
-    $stats['payroll_expense'] = (float)$p['payroll_expense'];
-    $stats['statutory_share'] = (float)$p['statutory_share'];
-} else {
-    $stats['payroll_expense'] = 0;
-    $stats['statutory_share'] = 0;
+// Low stock and near-expiry products, for the alerts panel below (not a
+// "system health / missing table" message — these are the things an owner
+// actually needs to act on).
+$lowStockThreshold = 10;
+$lowStockProducts = [];
+$lowStockRes = $conn->query("SELECT id, product_name, category, stock_quantity
+                             FROM inventory
+                             WHERE status = 'Active' AND stock_quantity < {$lowStockThreshold}
+                             ORDER BY stock_quantity ASC
+                             LIMIT 8");
+if ($lowStockRes) {
+    while ($row = $lowStockRes->fetch_assoc()) {
+        $lowStockProducts[] = $row;
+    }
 }
 
-$netProfit = $stats['today_sales'] - 0 - $stats['payroll_expense'] - $stats['statutory_share'];
+$nearExpiryProducts = get_near_expiration_products($conn, 7);
 
 $topProducts = $conn->query("SELECT i.product_name, SUM(s.quantity) qty, SUM(s.total_price) revenue
                              FROM sales s
@@ -188,43 +157,62 @@ if ($categoryTrend) {
 $maxSalesTrend = !empty($salesTrendValues) ? max($salesTrendValues) : 0;
 $maxCategorySales = !empty($categoryValues) ? max($categoryValues) : 0;
 $healthOk = count($healthWarnings) === 0;
+
+$page_title = 'Dashboard';
+$breadcrumb = ['Dashboard'];
+$active = 'Dashboard-Admin.php';
+require_once __DIR__ . '/../includes/header.php';
 ?>
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Operations Dashboard</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
+<?php render_page_heading('Operations Analytics', 'Real-time store, sales, and HR analytics.'); ?>
 
-<?php render_sidebar('admin', 'Dashboard-Admin.php', 'Admin'); ?>
-
-<div class="userAdmin">
-    <div class="page-header">
-        <div>
-            <h1>Operations Analytics</h1>
-            <p>Real-time store, sales, and HR analytics with live system health checks.</p>
+    <?php if (!empty($lowStockProducts) || !empty($nearExpiryProducts)): ?>
+    <div class="form-container" style="border-left: 4px solid var(--warning);">
+        <h2>Alerts</h2>
+        <div class="analytics-grid">
+            <div>
+                <h3 style="margin-top:0;">Low Stock (<?php echo count($lowStockProducts); ?>)</h3>
+                <?php if (!empty($lowStockProducts)): ?>
+                    <ul class="health-list">
+                        <?php foreach ($lowStockProducts as $p): ?>
+                            <li>
+                                <span class="pill <?php echo (int)$p['stock_quantity'] <= 0 ? 'pill-danger' : 'pill-warning'; ?>">
+                                    <?php echo (int)$p['stock_quantity']; ?> left
+                                </span>
+                                <?php echo htmlspecialchars($p['product_name']); ?>
+                                <span style="color: var(--text-muted);">(<?php echo htmlspecialchars($p['category'] ?: 'Uncategorized'); ?>)</span>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                    <p><a href="Inventory.php">View inventory →</a></p>
+                <?php else: ?>
+                    <p class="status-text ok">Nothing low on stock right now.</p>
+                <?php endif; ?>
+            </div>
+            <div>
+                <h3 style="margin-top:0;">Near Expiry (<?php echo count($nearExpiryProducts); ?>)</h3>
+                <?php if (!empty($nearExpiryProducts)): ?>
+                    <ul class="health-list">
+                        <?php foreach ($nearExpiryProducts as $p): ?>
+                            <li>
+                                <span class="pill <?php echo $p['expiration_status'] === 'Expiring Today' ? 'pill-danger' : 'pill-warning'; ?>">
+                                    <?php echo htmlspecialchars($p['expiration_status']); ?>
+                                </span>
+                                <?php echo htmlspecialchars($p['product_name']); ?>
+                                <span style="color: var(--text-muted);">— <?php echo (int)$p['total_qty']; ?> units, exp. <?php echo date('M d, Y', strtotime($p['earliest_expiration'])); ?></span>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                    <p><a href="Stock-History.php">View stock history →</a></p>
+                <?php else: ?>
+                    <p class="status-text ok">Nothing expiring in the next 7 days.</p>
+                <?php endif; ?>
+            </div>
         </div>
-        <!-- <span class="chip"><?php echo $healthOk ? 'System Connected' : 'Needs Attention'; ?></span> -->
     </div>
+    <?php endif; ?>
 
-    <!-- <div class="form-container"> db status
-        <h2>System to Database Status</h2>
-        <p class="<?php echo $healthOk ? 'status-text ok' : 'status-text warn'; ?>">
-            <?php echo $healthOk ? 'Web app and required database tables are connected.' : 'Detected connectivity/schema issues. Review warnings below.'; ?>
-        </p>
-        <?php if (!$healthOk): ?>
-            <ul class="health-list">
-                <?php foreach ($healthWarnings as $warning): ?>
-                    <li><?php echo htmlspecialchars($warning); ?></li>
-                <?php endforeach; ?>
-            </ul>
-        <?php endif; ?>
-    </div> -->
-
+    <h3>Today</h3>
     <div class="stats-grid">
         <div class="stat-card"><div class="label">Today Sales</div><div class="value">PHP <?php echo number_format($stats['today_sales'], 2); ?></div></div>
         <div class="stat-card"><div class="label">Today Orders</div><div class="value"><?php echo number_format($stats['today_orders']); ?></div></div>
@@ -232,8 +220,14 @@ $healthOk = count($healthWarnings) === 0;
         <div class="stat-card"><div class="label">Low Stock Items</div><div class="value"><?php echo number_format($stats['low_stock']); ?></div></div>
         <div class="stat-card"><div class="label">Active Employees</div><div class="value"><?php echo number_format($stats['employees']); ?></div></div>
         <div class="stat-card"><div class="label">Present Today</div><div class="value"><?php echo number_format($stats['today_attendance']); ?></div></div>
-        <div class="stat-card"><div class="label">Payroll Expense</div><div class="value">PHP <?php echo number_format($stats['payroll_expense'] ?? 0, 2); ?></div></div>
-        <div class="stat-card"><div class="label">Net Profit</div><div class="value">PHP <?php echo number_format($netProfit, 2); ?></div></div>
+    </div>
+
+    <h3>This Month</h3>
+    <div class="stats-grid">
+        <div class="stat-card"><div class="label">Month Revenue</div><div class="value">PHP <?php echo number_format($stats['monthly_revenue'], 2); ?></div></div>
+        <div class="stat-card"><div class="label">Month Expenses</div><div class="value">PHP <?php echo number_format($stats['monthly_expenses'], 2); ?></div></div>
+        <div class="stat-card"><div class="label">Month Payroll</div><div class="value">PHP <?php echo number_format($stats['payroll_expense'] + $stats['statutory_share'], 2); ?></div></div>
+        <div class="stat-card"><div class="label">Month Net</div><div class="value">PHP <?php echo number_format($netProfit, 2); ?></div></div>
     </div>
 
     <div class="analytics-grid">
@@ -300,9 +294,7 @@ $healthOk = count($healthWarnings) === 0;
             </table>
         </div>
     </div>
-</div>
 
-<script src="../script.js"></script>
-</body>
-</html>
-<?php $conn->close(); ?>
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();
