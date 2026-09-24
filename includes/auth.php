@@ -72,6 +72,29 @@ function require_roles($roles, $redirect = '../Login.php') {
     }
 }
 
+// ============ Flash messages (session-based toasts) ============
+// Use these instead of `alert()` or inline $error_message/$success_message
+// variables. Works both when the page redirects after a POST (the normal
+// PRG pattern used throughout this app) and when it re-renders immediately,
+// since the toast is read back out of the session by includes/header.php
+// on the very next render.
+function flash($type, $message) {
+    if (!isset($_SESSION['__flash']) || !is_array($_SESSION['__flash'])) {
+        $_SESSION['__flash'] = [];
+    }
+    $_SESSION['__flash'][] = ['type' => $type, 'message' => (string)$message];
+}
+
+function flash_success($message) { flash('success', $message); }
+function flash_error($message) { flash('error', $message); }
+function flash_warning($message) { flash('warning', $message); }
+
+function flash_pull() {
+    $out = $_SESSION['__flash'] ?? [];
+    unset($_SESSION['__flash']);
+    return is_array($out) ? $out : [];
+}
+
 function csrf_token() {
     if (empty($_SESSION['csrf_token'])) {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));

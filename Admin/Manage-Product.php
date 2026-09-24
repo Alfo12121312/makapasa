@@ -134,15 +134,17 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_product'])) {
             $status = 'Active';
             $stmt->bind_param("sssssdss", $product_name, $stock_quantity, $category, $supplier, $product_unit, $price, $expiration_date, $status);
             if ($stmt->execute()) {
-                $success_message = "Product added successfully!";
+                flash_success("Product \"$product_name\" added successfully!");
             } else {
-                $error_message = "Error: " . $stmt->error;
+                flash_error("Error: " . $stmt->error);
             }
             $stmt->close();
         } else {
-            $error_message = "Product name, category, and supplier are required!";
+            flash_error("Product name, category, and supplier are required!");
         }
     }
+    header("Location: " . $_SERVER['PHP_SELF']);
+    exit();
 }
 
 // Handle product editing
@@ -158,7 +160,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['edit_product'])) {
     $checkStmt->close();
 
     if ($checkResult->num_rows > 0) {
-        $error_message = "Error: Product already exists! Add new stock in <a href='Inventory.php' style='color:#e53e3e;text-decoration:underline;'>Inventory.php</a>";
+        flash_error("Product already exists! Add new stock from the Inventory page instead.");
     } else {
         // Resolve category
         if ($_POST['category'] === '__others__') {
@@ -184,15 +186,17 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['edit_product'])) {
             $stmt = $conn->prepare("UPDATE inventory SET product_name = ?, category = ?, supplier = ? WHERE id = ?");
             $stmt->bind_param("sssi", $product_name, $category, $supplier, $product_id);
             if ($stmt->execute()) {
-                $success_message = "Product updated successfully!";
+                flash_success("Product \"$product_name\" updated successfully!");
             } else {
-                $error_message = "Error updating product: " . $stmt->error;
+                flash_error("Error updating product: " . $stmt->error);
             }
             $stmt->close();
         } else {
-            $error_message = "Product name, category, and supplier are required!";
+            flash_error("Product name, category, and supplier are required!");
         }
     }
+    header("Location: " . $_SERVER['PHP_SELF']);
+    exit();
 }
 
 // Handle status toggle
@@ -246,15 +250,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['toggle_status'])) {
         
         debug_add("Verification After Update: " . json_encode($verify_row));
         
-        // Store success message in session and redirect
-        $_SESSION['success_message'] = "Product status updated to " . $new_status . " successfully!";
-        $_SESSION['debug_info'] = implode(" | ", $debug_log);
-        
+        // Store success message and redirect
+        flash_success("Product status updated to " . $new_status . " successfully!");
+
         header("Location: " . $_SERVER['PHP_SELF']);
         exit();
     } else {
         debug_add("Update Failed: " . $stmt->error);
-        $error_message = "Error updating status: " . $stmt->error;
+        flash_error("Error updating status: " . $stmt->error);
     }
     $stmt->close();
 }
@@ -284,16 +287,12 @@ if ($supplierResult) {
         $supplierOptions[] = $row['value'];
     }
 }
+$page_title = 'Products';
+$breadcrumb = ['Inventory', 'Products'];
+$active = 'Manage-Product.php';
+ob_start();
 ?>
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manage Products</title>
-    <link rel="stylesheet" href="../style.css">
-    <style>
+<style>
         /* ══ POPUP OVERLAY ══ */
         .popup-overlay {
             position: fixed; inset: 0;
@@ -320,7 +319,7 @@ if ($supplierResult) {
 
         /* ══ HEADER ══ */
         .popup-header {
-            background: #2c3dbd;
+            background: var(--accent);
             padding: 22px 26px 18px;
             border-radius: 16px 16px 0 0;
             position: relative;
@@ -441,20 +440,20 @@ if ($supplierResult) {
             transition:all .22s ease;
         }
         .progress-dots .dot.active {
-            background:#163d28; width:18px; border-radius:4px;
+            background:var(--accent); width:18px; border-radius:4px;
         }
         .btn-add-product {
             padding:10px 22px;
-            background:#2980b9; color:#fff;
+            background:var(--accent); color:#fff;
             border:none; border-radius:8px;
             font-size:14px; font-weight:600; cursor:pointer;
             transition:background .15s, transform .1s;
         }
-        .btn-add-product:hover { background:#597afd9e; }
+        .btn-add-product:hover { background:var(--accent-dark); }
         .btn-add-product:active { transform:scale(0.97); }
         .btn-popup-cancel {
             padding:10px 16px;
-            background:transparent; border:1.5px solid #264dea;
+            background:transparent; border:1.5px solid var(--accent);
             border-radius:8px; font-size:14px; color:#777;
             cursor:pointer; transition:background .15s, border-color .15s;
         }
@@ -481,135 +480,111 @@ if ($supplierResult) {
             .progress-dots .dot { background:#3a3a3a; }
             .progress-dots .dot.active { background:#4ade80; }
         }
-    </style>
-</head>
-<body>
-
-<?php render_sidebar('admin', 'Manage-Product.php', 'Admin'); ?>
-
-<div class="userAdmin">
-
-<h1>Manage Products</h1>
-<p>Add, edit, and manage product details here.</p>
-
-<?php 
-// Check for session messages first, then regular variables
-if (isset($_SESSION['success_message'])) {
-    echo '<div class="message success">' . $_SESSION['success_message'] . '</div>';
-    unset($_SESSION['success_message']);
-} elseif (isset($success_message)) {
-    echo '<div class="message success">' . $success_message . '</div>';
-}
-
-if (isset($error_message)): 
+</style>
+<?php
+$extra_head = ob_get_clean();
+require_once __DIR__ . '/../includes/header.php';
 ?>
-    <div class="message error"><?php echo $error_message; ?></div>
-<?php endif; ?>
 
-<button type="button" class="primary-button" onclick="showAddProduct()">Add New Product</button>
+<?php render_page_heading('Products', 'Add, edit, and manage product details here.'); ?>
 
-<!-- Search and Filter Controls -->
-<div class="search-filter-container">
-    <div class="search-box">
-        <input type="text" id="searchInput" placeholder="Search by product name..." onkeyup="searchTable('searchInput', 'manageProductTable')">
+<div class="app-toolbar">
+    <button type="button" class="btn btn-primary" onclick="showAddProduct()">+ Add Product</button>
+    <div class="search-field">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" placeholder="Search by product name…" onkeyup="searchTable('searchInput', 'manageProductTable')">
     </div>
-    <div class="filter-group">
-        <label class="filter-label">Filter by Category:</label>
-        <select id="categoryFilter" class="filter-select" onchange="filterByCategory('categoryFilter', 'manageProductTable')">
-            <option value="">All Categories</option>
-            <?php foreach ($categoryOptions as $option): ?>
-                <option value="<?php echo htmlspecialchars($option); ?>"><?php echo htmlspecialchars($option); ?></option>
-            <?php endforeach; ?>
-        </select>
-    </div>
-    <div class="filter-group">
-        <label class="filter-label">Filter by Supplier:</label>
-        <select id="supplierFilter" class="filter-select" onchange="filterBySupplier('supplierFilter', 'manageProductTable')">
-            <option value="">All Suppliers</option>
-            <?php foreach ($supplierOptions as $option): ?>
-                <option value="<?php echo htmlspecialchars($option); ?>"><?php echo htmlspecialchars($option); ?></option>
-            <?php endforeach; ?>
-        </select>
-    </div>
-    <div class="filter-group">
-        <label class="filter-label">Filter by Status:</label>
-        <select id="statusFilter" class="filter-select" onchange="filterByStatus('statusFilter', 'manageProductTable')">
-            <option value="">All Statuses</option>
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-        </select>
-    </div>
+    <select id="categoryFilter" class="filter-select" onchange="filterByCategory('categoryFilter', 'manageProductTable')">
+        <option value="">All Categories</option>
+        <?php foreach ($categoryOptions as $option): ?>
+            <option value="<?php echo htmlspecialchars($option); ?>"><?php echo htmlspecialchars($option); ?></option>
+        <?php endforeach; ?>
+    </select>
+    <select id="supplierFilter" class="filter-select" onchange="filterBySupplier('supplierFilter', 'manageProductTable')">
+        <option value="">All Suppliers</option>
+        <?php foreach ($supplierOptions as $option): ?>
+            <option value="<?php echo htmlspecialchars($option); ?>"><?php echo htmlspecialchars($option); ?></option>
+        <?php endforeach; ?>
+    </select>
+    <select id="statusFilter" class="filter-select" onchange="filterByStatus('statusFilter', 'manageProductTable')">
+        <option value="">All Statuses</option>
+        <option value="Active">Active</option>
+        <option value="Inactive">Inactive</option>
+    </select>
+    <span class="toolbar-spacer"></span>
+    <span class="toolbar-count"><?php echo (int)$result->num_rows; ?> products</span>
 </div>
 
-<!-- Products Table -->
-<h2>All Products</h2>
-<?php if ($result->num_rows > 0): ?>
+<div class="app-table-wrapper">
     <table id="manageProductTable" class="userTable">
         <thead>
             <tr>
                 <th>Product Name</th>
                 <th>Category</th>
                 <th>Supplier</th>
-                <!-- <th>Stock Quantity</th>
-                <th>Unit</th>
-                <th>Price</th>
-                <th>Expiration Date</th> -->
                 <th>Status</th>
                 <th>Date Added</th>
-                <th>Actions</th>
+                <th style="width:56px;"></th>
             </tr>
         </thead>
         <tbody>
-            <?php while($row = $result->fetch_assoc()): ?>
-            <tr>
-                <td><?php echo htmlspecialchars($row['product_name']); ?></td>
-                <td><?php echo htmlspecialchars($row['category']); ?></td>
-                <td><?php echo htmlspecialchars($row['supplier']); ?></td>
-                <!-- <td><?php echo $row['stock_quantity']; ?></td>
-                <td><?php echo htmlspecialchars($row['product_unit']); ?></td>
-                <td><?php echo number_format($row['price'], 2); ?></td>
-                <td><?php echo $row['expiration_date'] ? $row['expiration_date'] : 'N/A'; ?></td> -->
-                <td><?php 
-                    // Normalize status for display: treat NULL, empty, or 'Hidden' as 'Inactive' initially
-                    $display_status = $row['status'];
-                    if (empty($display_status) || $display_status === 'Hidden') {
-                        $display_status = 'Inactive';
-                    }
-                    echo htmlspecialchars($display_status);
-                ?></td>
-                <td><?php echo $row['date_added']; ?></td>
-                <td>
-                    <button type="button" class="primary-button" onclick='editProduct(
-                        <?php echo json_encode($row["id"]); ?>,
-                        <?php echo json_encode($row["product_name"]); ?>,
-                        <?php echo json_encode($row["category"]); ?>,
-                        <?php echo json_encode($row["supplier"]); ?>
-                    )'>Edit</button>
-
-                    <form method="post" action="" style="display:inline;">
-                        <input type="hidden" name="product_id" value="<?php echo $row['id']; ?>">
+            <?php if ($result->num_rows > 0): ?>
+                <?php while ($row = $result->fetch_assoc()): ?>
+                <tr>
+                    <td><?php echo htmlspecialchars($row['product_name']); ?></td>
+                    <td><?php echo htmlspecialchars($row['category']); ?></td>
+                    <td><?php echo htmlspecialchars($row['supplier']); ?></td>
+                    <td><?php
+                        // Normalize status for display: treat NULL, empty, or 'Hidden' as 'Inactive'
+                        $display_status = $row['status'];
+                        if (empty($display_status) || $display_status === 'Hidden') {
+                            $display_status = 'Inactive';
+                        }
+                        $pill_class = $display_status === 'Active' ? 'pill-success' : 'pill-neutral';
+                        echo '<span class="pill ' . $pill_class . '">' . htmlspecialchars($display_status) . '</span>';
+                    ?></td>
+                    <td><?php echo $row['date_added']; ?></td>
+                    <td>
                         <?php
-                            // Determine button state: treat NULL, empty, or 'Hidden' as 'Inactive'
                             $btn_status = $row['status'];
                             if (empty($btn_status) || $btn_status === 'Hidden') {
                                 $btn_status = 'Inactive';
                             }
                             $is_active = ($btn_status === 'Active');
-                            $btn_color = $is_active ? '#e53e3e' : '#27ae60';
-                            $btn_text = $is_active ? 'Archive' : 'Restore';
                         ?>
-                        <button type="submit" name="toggle_status" class="primary-button" style="background: <?php echo $btn_color; ?>">
-                            <?php echo $btn_text; ?>
-                        </button>
-                    </form>
-                </td>
-            </tr>
-            <?php endwhile; ?>
+                        <div class="row-menu">
+                            <button type="button" class="row-menu-trigger" aria-label="Row actions">⋮</button>
+                            <div class="row-menu-list">
+                                <button type="button" onclick='editProduct(
+                                    <?php echo json_encode($row["id"]); ?>,
+                                    <?php echo json_encode($row["product_name"]); ?>,
+                                    <?php echo json_encode($row["category"]); ?>,
+                                    <?php echo json_encode($row["supplier"]); ?>
+                                )'>Edit</button>
+                                <form method="post" action="">
+                                    <input type="hidden" name="product_id" value="<?php echo $row['id']; ?>">
+                                    <button type="submit" name="toggle_status" class="<?php echo $is_active ? 'danger' : ''; ?>">
+                                        <?php echo $is_active ? 'Archive' : 'Restore'; ?>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                <?php endwhile; ?>
+            <?php else: ?>
+                <tr data-empty-row><td colspan="6">
+                    <div class="app-empty-state">
+                        <div class="empty-icon">📦</div>
+                        <h3>No products yet</h3>
+                        <p>Add your first SKU to start building your catalog.</p>
+                        <button type="button" class="btn btn-primary" onclick="showAddProduct()">+ Add Product</button>
+                    </div>
+                </td></tr>
+            <?php endif; ?>
         </tbody>
     </table>
-<?php else: ?>
-    <p>No products yet.</p>
-<?php endif; ?>
+</div>
 
 <!-- ═══════════════════════════════════════
      ADD PRODUCT POPUP
@@ -777,9 +752,7 @@ if (isset($error_message)):
     </div>
 </div>
 
-</div><!-- /userAdmin -->
-
-<script src="../script.js"></script>
+<?php ob_start(); ?>
 <script>
 /* ══════════════════════════════════════════════
    POPUP OPEN / CLOSE
@@ -793,10 +766,8 @@ function showAddProduct() {
 function closeAddProduct() {
     document.getElementById('addPopup').style.display = 'none';
 }
-function cancelEdit() {
-    document.getElementById('editPopup').style.display = 'none';
-}
-
+/* cancelEdit() for the edit popup is defined once, in script.js, so it
+   can be shared safely with other pages that also call it. */
 /* ══════════════════════════════════════════════
    CLEAR FORM (reset values + errors)
 ══════════════════════════════════════════════ */
@@ -967,13 +938,13 @@ function filterByStatus(statusFilterId, tableId) {
     const rows = document.getElementById(tableId).getElementsByTagName('tr');
     for (let i = 1; i < rows.length; i++) {
         const cells = rows[i].getElementsByTagName('td');
-        const statusCell = cells[7];
+        const statusCell = cells[3];
         if (!statusCell) { rows[i].style.display = ''; continue; }
         rows[i].style.display = (!selectedStatus || statusCell.textContent.trim() === selectedStatus) ? '' : 'none';
     }
 }
 </script>
-</body>
-</html>
-
-<?php $conn->close(); ?>
+<?php
+$extra_js = ob_get_clean();
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

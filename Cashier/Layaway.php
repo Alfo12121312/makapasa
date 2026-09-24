@@ -30,6 +30,13 @@ if ($allowed && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_payme
                       status = CASE WHEN GREATEST(0, balance_amount - {$amount}) = 0 THEN 'Released' ELSE status END,
                       released_at = CASE WHEN GREATEST(0, balance_amount - {$amount}) = 0 THEN NOW() ELSE released_at END
                   WHERE id = {$layawayId}");
+    // Keep stock reservations in sync with the layaway status — without this,
+    // a layaway paid off by a cashier stays marked 'Released' while its
+    // reserved stock is silently left reserved forever (this was previously
+    // only handled in Admin/Layaway.php's copy of this same handler).
+    $conn->query("UPDATE stock_reservations
+                  SET status = CASE WHEN (SELECT status FROM layaways WHERE id = {$layawayId}) = 'Released' THEN 'Released' ELSE status END
+                  WHERE layaway_id = {$layawayId}");
 }
 
 $layaways = $conn->query("SELECT l.*, COALESCE(SUM(lp.amount), 0) total_paid
@@ -37,18 +44,14 @@ $layaways = $conn->query("SELECT l.*, COALESCE(SUM(lp.amount), 0) total_paid
                           LEFT JOIN layaway_payments lp ON lp.layaway_id = l.id
                           GROUP BY l.id
                           ORDER BY l.created_at DESC");
+
+$context = 'cashier';
+$page_title = 'Layaway Payments';
+$breadcrumb = ['Layaway'];
+$active = 'Layaway.php';
+$role_title = 'Cashier';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Layaway Payments</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-<?php render_sidebar('cashier', 'Layaway.php', 'Cashier'); ?>
-<div class="userAdmin">
     <h1>Layaway Payments</h1>
     <p><?php echo $allowed ? 'Collect payments for pending layaway accounts.' : 'Layaway payment collection is disabled in system settings.'; ?></p>
     <div class="user-table-wrapper">
@@ -81,7 +84,7 @@ $layaways = $conn->query("SELECT l.*, COALESCE(SUM(lp.amount), 0) total_paid
             </tbody>
         </table>
     </div>
-</div>
-<script src="../script.js"></script>
-</body>
-</html>
+
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

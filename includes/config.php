@@ -1,6 +1,6 @@
 <?php
 return [
-    'app_name' => 'MakaPasa',
+    'app_name' => 'Demonteverde Agrivet',
     'db_host' => 'localhost',
     'db_user' => 'root',
     'db_pass' => '',

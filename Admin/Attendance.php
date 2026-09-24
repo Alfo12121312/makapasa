@@ -16,27 +16,8 @@ require_roles(['System Admin', 'Manager'], '../Login.php');
 
 $conn = app_connect();
 
-/* $conn->query("CREATE TABLE IF NOT EXISTS employees (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    employee_code VARCHAR(30) NOT NULL UNIQUE,
-    full_name VARCHAR(120) NOT NULL,
-    position VARCHAR(80) NOT NULL,
-    monthly_salary DECIMAL(12,2) NOT NULL DEFAULT 0,
-    daily_rate DECIMAL(12,2) NOT NULL DEFAULT 0,
-    status ENUM('Active','Inactive') DEFAULT 'Active',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)");
-$conn->query("CREATE TABLE IF NOT EXISTS attendance (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    employee_id INT NOT NULL,
-    attendance_date DATE NOT NULL,
-    time_in DATETIME NULL,
-    time_out DATETIME NULL,
-    total_hours DECIMAL(8,2) NOT NULL DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uniq_employee_day (employee_id, attendance_date),
-    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
-)"); */
+/* employees/attendance table schemas live in includes/app.php (bootstrapped
+   on every page, including migrations) — not redefined here. */
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['time_in'])) {
     $employee_id = (int)$_POST['employee_id'];
@@ -112,21 +93,13 @@ if ($types !== '') {
 $logsStmt->execute();
 $logs = $logsStmt->get_result();
 $logsStmt->close();
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Attendance Tracking</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-<?php render_sidebar('admin', 'Attendance.php', 'Admin'); ?>
 
-<div class="userAdmin">
-    <h1>Attendance Tracking</h1>
-    <p>Manage daily time-in and time-out logs for each employee.</p>
+$page_title = 'Attendance';
+$breadcrumb = ['HR', 'Attendance'];
+$active = 'Attendance.php';
+require_once __DIR__ . '/../includes/header.php';
+?>
+<?php render_page_heading('Attendance Tracking', 'Manage daily time-in and time-out logs for each employee.'); ?>
 
     <div class="user-table-wrapper">
         <table class="userTable">
@@ -201,8 +174,7 @@ $logsStmt->close();
             </table>
         </div>
     </div>
-</div>
-<script src="../script.js"></script>
-</body>
-</html>
-<?php $conn->close(); ?>
+
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

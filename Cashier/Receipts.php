@@ -45,6 +45,7 @@ render_app_open([
     'active' => 'Receipts.php',
     'role_title' => 'Cashier',
     'title' => 'Receipt Reprint',
+    'breadcrumb' => ['Sales', 'Receipts'],
 ]);
 ?>
     <h1>Receipt Reprint</h1>

@@ -15,17 +15,9 @@ require_roles(['System Admin', 'Manager'], '../Login.php');
 
 $conn = app_connect();
 
-/* $conn->query("CREATE TABLE IF NOT EXISTS employees (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    employee_code VARCHAR(30) NOT NULL UNIQUE,
-    full_name VARCHAR(120) NOT NULL,
-    position VARCHAR(80) NOT NULL,
-    monthly_salary DECIMAL(12,2) NOT NULL DEFAULT 0,
-    daily_rate DECIMAL(12,2) NOT NULL DEFAULT 0,
-    status ENUM('Active','Inactive') DEFAULT 'Active',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)");
- */
+/* employees table schema lives in includes/app.php (bootstrapped on every
+   page, including migrations) — not redefined here. */
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_employee'])) {
     $employee_code = trim($_POST['employee_code']);
     $full_name = trim($_POST['full_name']);
@@ -97,20 +89,12 @@ if ($salaryStmt) {
 }
 
 $cashAdvances = $conn->query("SELECT ca.*, e.full_name FROM cash_advances ca JOIN employees e ON e.id = ca.employee_id ORDER BY ca.advance_date DESC, ca.created_at DESC");
+
+$page_title = 'Employees';
+$breadcrumb = ['HR', 'Employees'];
+$active = 'Employees.php';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Employee Management</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-<?php render_sidebar('admin', 'Employees.php', 'Admin'); ?>
-
-
-<div class="userAdmin">
     <h1>Employee Management</h1>
     <p>Add employees and maintain salary profiles for payroll.</p>
     <div class="form-container">
@@ -212,7 +196,8 @@ $cashAdvances = $conn->query("SELECT ca.*, e.full_name FROM cash_advances ca JOI
             </table>
         </div>
     </div>
-</div>
+
+<?php ob_start(); ?>
 <script>
     document.querySelectorAll('.cash-advance-btn').forEach(function(button) {
         button.addEventListener('click', function() {
@@ -237,7 +222,7 @@ $cashAdvances = $conn->query("SELECT ca.*, e.full_name FROM cash_advances ca JOI
         records.style.display = records.style.display === 'block' ? 'none' : 'block';
     });
 </script>
-<script src="../script.js"></script>
-</body>
-</html>
-<?php $conn->close(); ?>
+<?php
+$extra_js = ob_get_clean();
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

@@ -7,7 +7,7 @@
  * - Auto-migration adding `created_at` column near line 7
  * - Prepared statement for main query between lines ~20-36
  * Usage / Call sites:
- * - Available in admin navigation: [Admin/sidebar.php](Admin/sidebar.php#L62)
+ * - Available in admin navigation: `render_sidebar()` in `includes/app.php`
  * Known issues / improvements:
  * - Move schema migrations out of runtime.
  * - Consider caching or pagination for large result sets.
@@ -74,6 +74,7 @@ render_app_open([
     'active' => 'Sales-ReportAdmin.php',
     'role_title' => 'Admin',
     'title' => 'Sales Report',
+    'breadcrumb' => ['Reports', 'Sales'],
 ]);
 ?>
 

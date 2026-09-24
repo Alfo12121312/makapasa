@@ -151,21 +151,15 @@ $stmt->close();
 
 ?>
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sales Report</title>
-    <link rel="stylesheet" href="style.css">
-</head>
-<body>
-
-
-<?php render_sidebar('root', 'Sales-Report.php', auth_user_role()); ?>
+<?php
+$context = 'root';
+$page_title = 'Sales Report';
+$breadcrumb = ['Reports', 'Sales'];
+$active = 'Sales-Report.php';
+require_once __DIR__ . '/includes/header.php';
+?>
 
 <!-- Main Content -->
-<div class="userAdmin">
 <div class="page-header">
     <div>
         <h1>Sales Report</h1>
@@ -325,14 +319,8 @@ $stmt->close();
 <div class="message error">No sales found for the selected period.</div>
 <?php endif; ?>
 
-</div>
-
-<script src="script.js"></script>
-
-</body>
-</html>
-
 <?php
+require_once __DIR__ . '/includes/footer.php';
 $conn->close();
 ?>
 <!-- do not remove need for Sales-Report.php -->

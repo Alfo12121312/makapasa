@@ -56,19 +56,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['set_status'])) {
 }
 
 $orders = $conn->query("SELECT *, (quantity * unit_cost) AS total_cost FROM purchase_orders ORDER BY created_at DESC");
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Purchasing</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-<?php render_sidebar('admin', 'Purchasing.php', 'Admin'); ?>
 
-<div class="userAdmin">
+$page_title = 'Purchasing';
+$breadcrumb = ['Inventory', 'Purchasing'];
+$active = 'Purchasing.php';
+require_once __DIR__ . '/../includes/header.php';
+?>
     <h1>Purchasing Management</h1>
     <p>Create and track purchase orders by supplier and delivery status.</p>
     <div class="form-container">
@@ -113,8 +106,7 @@ $orders = $conn->query("SELECT *, (quantity * unit_cost) AS total_cost FROM purc
             </tbody>
         </table>
     </div>
-</div>
-<script src="../script.js"></script>
-</body>
-</html>
-<?php $conn->close(); ?>
+
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

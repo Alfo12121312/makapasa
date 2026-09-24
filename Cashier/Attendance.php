@@ -48,18 +48,14 @@ $logs = $conn->query("SELECT e.full_name, e.position, a.attendance_date, a.time_
                       JOIN employees e ON e.id = a.employee_id
                       ORDER BY a.attendance_date DESC, e.full_name ASC
                       LIMIT 200");
+
+$context = 'cashier';
+$page_title = 'Attendance';
+$breadcrumb = ['Attendance'];
+$active = 'Attendance.php';
+$role_title = 'Cashier';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cashier Attendance</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-<?php render_sidebar('cashier', 'Attendance.php', 'Cashier'); ?>
-<div class="userAdmin">
     <div class="page-header">
         <div>
             <h1>Employee Attendance</h1>
@@ -123,7 +119,7 @@ $logs = $conn->query("SELECT e.full_name, e.position, a.attendance_date, a.time_
             </table>
         </div>
     </div>
-</div>
-<script src="../script.js"></script>
-</body>
-</html>
+
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

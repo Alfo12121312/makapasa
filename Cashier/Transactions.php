@@ -30,6 +30,7 @@ render_app_open([
     'active' => 'Transactions.php',
     'role_title' => 'Cashier',
     'title' => 'My Transactions',
+    'breadcrumb' => ['Sales', 'Transactions'],
 ]);
 ?>
     <h1>My Transactions</h1>

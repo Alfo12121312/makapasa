@@ -70,21 +70,13 @@ while ($row = $sales_result->fetch_assoc()) {
     $total_discount += $row['discount'] * $row['quantity'];
     $total_quantity += $row['quantity'];
 }
+
+$context = 'owner';
+$page_title = 'Sales Report';
+$breadcrumb = ['Reports', 'Sales'];
+$active = 'Sales-ReportOwner.php';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Sales Report Admin</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-
-<?php render_sidebar('owner', 'Sales-ReportOwner.php', auth_user_role()); ?>
-
-<div class="userAdmin">
-
 <div class="page-header">
     <div>
         <h1>Sales Report</h1>
@@ -159,8 +151,6 @@ while ($row = $sales_result->fetch_assoc()) {
 
 </div>
 
-<script src="script.js"></script>
-</body>
-</html>
-
-<?php $conn->close(); ?>
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

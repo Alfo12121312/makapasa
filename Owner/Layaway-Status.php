@@ -15,18 +15,14 @@ $layaways = $conn->query("SELECT l.*, COALESCE(SUM(lp.amount), 0) total_paid
                           LEFT JOIN layaway_payments lp ON lp.layaway_id = l.id
                           GROUP BY l.id
                           ORDER BY l.created_at DESC");
+
+$context = 'owner';
+$page_title = 'Layaway Status';
+$breadcrumb = ['Sales', 'Layaway'];
+$active = 'Layaway-Status.php';
+$role_title = 'Owner';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Layaway Status</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-<?php render_sidebar('owner', 'Layaway-Status.php', 'Owner'); ?>
-<div class="userAdmin">
     <h1>Layaway Status</h1>
     <p>Read-only status of reserved orders, balances, and releases.</p>
     <div class="user-table-wrapper">
@@ -49,7 +45,7 @@ $layaways = $conn->query("SELECT l.*, COALESCE(SUM(lp.amount), 0) total_paid
             </tbody>
         </table>
     </div>
-</div>
-<script src="../script.js"></script>
-</body>
-</html>
+
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

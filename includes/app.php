@@ -30,7 +30,7 @@ function app_name($conn = null) {
             return $stored;
         }
     }
-    return (string)(app_config()['app_name'] ?? 'MakaPasa');
+    return (string)(app_config()['app_name'] ?? 'Demonteverde Agrivet');
 }
 
 function app_setting($conn, $key, $default = '') {
@@ -299,7 +299,7 @@ function ensure_core_schema($conn) {
     $settings = [
         'cashier_can_apply_discounts' => '0',
         'cashier_can_manage_layaway_payments' => '1',
-        'store_name' => (string)(app_config()['app_name'] ?? 'MakaPasa'),
+        'store_name' => (string)(app_config()['app_name'] ?? 'Demonteverde Agrivet'),
         'store_address' => '',
         'wholesale_discount_percent' => '10'
     ];
@@ -319,6 +319,21 @@ function ensure_core_schema($conn) {
             $stmt->bind_param("ss", $key, $value);
             $stmt->execute();
             $stmt->close();
+        }
+    }
+
+    // One-time migration: earlier installs seeded store_name with the repo's
+    // name ("MakaPasa") as a placeholder. If a database still has that exact
+    // value, bring it in line with the real config now — INSERT IGNORE above
+    // only seeds a brand-new row, it won't touch one that already exists.
+    $legacyName = 'MakaPasa';
+    $currentName = (string)(app_config()['app_name'] ?? $legacyName);
+    if ($currentName !== $legacyName) {
+        $migrateStmt = $conn->prepare("UPDATE system_settings SET setting_value = ? WHERE setting_key = 'store_name' AND setting_value = ?");
+        if ($migrateStmt) {
+            $migrateStmt->bind_param("ss", $currentName, $legacyName);
+            $migrateStmt->execute();
+            $migrateStmt->close();
         }
     }
 }

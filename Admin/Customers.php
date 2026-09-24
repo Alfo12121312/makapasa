@@ -7,9 +7,7 @@
  * - `new mysqli(...)` DB connection at line 5 (consider `app_connect()` for consistency)
  * - CRUD SQL queries are used directly via `$conn->query()` and prepared statements later in the file (search for `->query(` and `prepare(`).
  * Usage / Call sites:
- * - Linked in admin navigation: `Admin/sidebar.php` (render call at [Admin/sidebar.php](Admin/sidebar.php#L62))
- * - Linked in global sidebar: `sidebar.php` (menu entry at [sidebar.php](sidebar.php#L76))
- * - Included in top-level app menu: `includes/app.php` (menu entry near [includes/app.php](includes/app.php#L594))
+ * - Linked in admin navigation: `render_sidebar()` in `includes/app.php` (near line 655).
  * - Referenced by `Admin/Layaway.php` when instructing to add a customer (see [Admin/Layaway.php](Admin/Layaway.php#L129)).
  * - Conclusion: This file is actively used by the application's navigation and other pages (NOT unused).
  * Known issues / improvements:
@@ -42,19 +40,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_customer'])) {
 }
 
 $customers = $conn->query("SELECT * FROM customers ORDER BY created_at DESC");
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Customers</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-<?php render_sidebar('admin', 'Customers.php', 'Admin'); ?>
 
-<div class="userAdmin">
+$page_title = 'Customers';
+$breadcrumb = ['CRM', 'Customers'];
+$active = 'Customers.php';
+require_once __DIR__ . '/../includes/header.php';
+?>
     <h1>Customer Management</h1>
     <p>Maintain customer records for follow-ups and future CRM expansion.</p>
     <div class="form-container">
@@ -83,8 +74,7 @@ $customers = $conn->query("SELECT * FROM customers ORDER BY created_at DESC");
             </tbody>
         </table>
     </div>
-</div>
-<script src="../script.js"></script>
-</body>
-</html>
-<?php $conn->close(); ?>
+
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

@@ -7,7 +7,7 @@
  * - Layaway creation flow (select product, reserve stock, insert layaway, insert layaway items) around lines ~6-60.
  * - Payment handling and balance update logic around lines ~60-120 (mixes prepared statements and direct queries).
  * Usage / Call sites:
- * - Linked from admin navigation: [Admin/sidebar.php](Admin/sidebar.php#L62)
+ * - Linked from admin navigation: `render_sidebar()` in `includes/app.php`
  * - References `Customers.php` for customer selection: see [Admin/Layaway.php](Admin/Layaway.php#L129).
  * Known issues / improvements:
  * - Avoid mixing prepared statements and interpolated queries; replace interpolation in balance updates with prepared statements to prevent SQL errors and injection.
@@ -120,18 +120,12 @@ $layaways = $conn->query("SELECT l.*, COALESCE(SUM(lp.amount), 0) total_paid
                           LEFT JOIN layaway_payments lp ON lp.layaway_id = l.id
                           GROUP BY l.id
                           ORDER BY l.created_at DESC");
+
+$page_title = 'Layaway';
+$breadcrumb = ['Sales', 'Layaway'];
+$active = 'Layaway.php';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Layaway</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-<?php render_sidebar('admin', 'Layaway.php', 'Admin'); ?>
-<div class="userAdmin">
     <div class="page-header">
         <div>
             <h1>Layaway Management</h1>
@@ -205,7 +199,7 @@ $layaways = $conn->query("SELECT l.*, COALESCE(SUM(lp.amount), 0) total_paid
             </tbody>
         </table>
     </div>
-</div>
-<script src="../script.js"></script>
-</body>
-</html>
+
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

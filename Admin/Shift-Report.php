@@ -45,18 +45,12 @@ $stmt->bind_param($types, ...$params);
 $stmt->execute();
 $sessions = $stmt->get_result();
 $stmt->close();
+
+$page_title = 'Shift Report';
+$breadcrumb = ['Reports', 'Shift Report'];
+$active = 'Shift-Report.php';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shift Reports</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-<?php render_sidebar('admin', 'Shift-Report.php', 'Admin'); ?>
-<div class="userAdmin">
     <div class="page-header">
         <div>
             <h1>Shift Reports</h1>
@@ -111,7 +105,7 @@ $stmt->close();
             </tbody>
         </table>
     </div>
-</div>
-<script src="../script.js"></script>
-</body>
-</html>
+
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

@@ -112,20 +112,12 @@ if (isset($_GET['export']) && $_GET['export'] === 'excel') {
     fclose($out);
     exit();
 }
+
+$page_title = 'Payroll';
+$breadcrumb = ['HR', 'Payroll'];
+$active = 'Payroll.php';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Payroll</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-
-<?php render_sidebar('admin', 'Payroll.php', 'Admin'); ?>
-
-<div class="userAdmin">
     <div class="page-header">
         <div>
             <h1>Payroll Computation</h1>
@@ -175,8 +167,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'excel') {
             </tbody>
         </table>
     </div>
-</div>
-<script src="../script.js"></script>
-</body>
-</html>
-<?php $conn->close(); ?>
+
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

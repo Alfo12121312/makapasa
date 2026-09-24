@@ -33,15 +33,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
     }
 }
 
+ob_start();
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>System Settings</title>
-    <link rel="stylesheet" href="../style.css">
-    <style>
+<style>
         .settings-grid {
             grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
             gap: 20px;
@@ -57,11 +51,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
         .userTable td.actions button {
             min-width: 90px;
         }
-    </style>
-</head>
-<body>
-<?php render_sidebar('admin', 'System-Settings.php', 'Admin'); ?>
-<div class="userAdmin">
+</style>
+<?php
+$extra_head = ob_get_clean();
+$page_title = 'System Settings';
+$breadcrumb = ['Settings', 'System'];
+$active = 'System-Settings.php';
+require_once __DIR__ . '/../includes/header.php';
+?>
     <div class="page-header">
         <div>
             <h1>System Settings</h1>
@@ -90,8 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
         </div>
     </div>
 
-</div>
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();
 
-<script src="../script.js"></script>
-</body>
-</html>

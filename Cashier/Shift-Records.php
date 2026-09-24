@@ -12,18 +12,14 @@ require_roles(['Cashier'], '../Login.php');
 $conn = app_connect();
 $cashierId = auth_user_id();
 $sessions = $conn->query("SELECT * FROM cashier_sessions WHERE cashier_id = {$cashierId} ORDER BY session_date DESC, started_at DESC");
+
+$context = 'cashier';
+$page_title = 'My Shift Records';
+$breadcrumb = ['Shift Records'];
+$active = 'Shift-Records.php';
+$role_title = 'Cashier';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Shift Records</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-<?php render_sidebar('cashier', 'Shift-Records.php', 'Cashier'); ?>
-<div class="userAdmin">
     <h1>My Shift Records</h1>
     <p>Review your start and end times, sales totals, and cash reconciliation per shift.</p>
     <div class="user-table-wrapper">
@@ -47,7 +43,7 @@ $sessions = $conn->query("SELECT * FROM cashier_sessions WHERE cashier_id = {$ca
             </tbody>
         </table>
     </div>
-</div>
-<script src="../script.js"></script>
-</body>
-</html>
+
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

@@ -57,18 +57,12 @@ $discounts = $conn->query("SELECT d.*, i.product_name
                            FROM discount_rules d
                            LEFT JOIN inventory i ON i.id = d.product_id
                            ORDER BY d.created_at DESC");
+
+$page_title = 'Discounts';
+$breadcrumb = ['Sales', 'Discounts'];
+$active = 'Discounts.php';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discounts</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-<?php render_sidebar('admin', 'Discounts.php', 'Admin'); ?>
-<div class="userAdmin">
     <div class="page-header">
         <div>
             <h1>Discounts and Promotions</h1>
@@ -133,7 +127,7 @@ $discounts = $conn->query("SELECT d.*, i.product_name
             </tbody>
         </table>
     </div>
-</div>
-<script src="../script.js"></script>
-</body>
-</html>
+
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();

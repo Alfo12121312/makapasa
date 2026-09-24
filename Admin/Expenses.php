@@ -49,18 +49,12 @@ $listStmt->bind_param("s", $month);
 $listStmt->execute();
 $expenses = $listStmt->get_result();
 $listStmt->close();
+
+$page_title = 'Expenses';
+$breadcrumb = ['Finance', 'Expenses'];
+$active = 'Expenses.php';
+require_once __DIR__ . '/../includes/header.php';
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Expenses</title>
-    <link rel="stylesheet" href="../style.css">
-</head>
-<body>
-<?php render_sidebar('admin', 'Expenses.php', 'Admin'); ?>
-<div class="userAdmin">
     <div class="page-header">
         <div>
             <h1>Expenses</h1>
@@ -109,8 +103,7 @@ $listStmt->close();
             </tbody>
         </table>
     </div>
-</div>
-<script src="../script.js"></script>
-</body>
-</html>
-    <?php $conn->close(); ?>
+
+<?php
+require_once __DIR__ . '/../includes/footer.php';
+$conn->close();
