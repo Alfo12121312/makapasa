@@ -11,11 +11,13 @@
  * - Good use of prepared statements for filter params; ensure inputs are validated (dates, product names) before binding.
  * - Consider rate-limiting the AJAX endpoint if exposed publicly.
  */
+// Bootstrap and authorization
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager', 'Owner'], '../Login.php');
 
 $conn = app_connect();
 
+// Input and actions
 // Handle AJAX request for stock history
 if ($_SERVER["REQUEST_METHOD"] == "GET" && isset($_GET['action']) && $_GET['action'] === 'get_stock_history') {
     header('Content-Type: application/json');
@@ -26,12 +28,10 @@ if ($_SERVER["REQUEST_METHOD"] == "GET" && isset($_GET['action']) && $_GET['acti
     $movementType = $_GET['movement_type'] ?? null;
     
     // Build query
-    $query = "SELECT sm.id, sm.product_id, sm.movement_type, sm.quantity, sm.cost_price, sm.batch_reference, sm.notes, sm.created_at, 
-                     i.product_name, COALESCE(e.full_name, u.username, 'System') AS created_by_name
+    $query = "SELECT sm.id, sm.product_id, sm.movement_type, sm.quantity, sm.cost_price, sm.batch_reference, sm.created_at,
+                     i.product_name
               FROM stock_movements sm
               LEFT JOIN inventory i ON sm.product_id = i.id
-              LEFT JOIN employees e ON sm.created_by = e.id
-              LEFT JOIN users u ON sm.created_by = u.id
               WHERE 1=1";
     
     $params = [];
@@ -77,11 +77,9 @@ if ($_SERVER["REQUEST_METHOD"] == "GET" && isset($_GET['action']) && $_GET['acti
             'product_id' => $row['product_id'],
             'product_name' => $row['product_name'] ?? 'Unknown',
             'movement_type' => $row['movement_type'],
-            'quantity' => (int)$row['quantity'],
+            'quantity' => (float)$row['quantity'],
             'cost_price' => (float)$row['cost_price'],
             'batch_reference' => $row['batch_reference'],
-            'notes' => $row['notes'] ?? 'N/A',
-            'created_by' => $row['created_by_name'] ?? 'System',
             'created_at' => date('Y-m-d H:i', strtotime($row['created_at']))
         ];
     }
@@ -92,6 +90,7 @@ if ($_SERVER["REQUEST_METHOD"] == "GET" && isset($_GET['action']) && $_GET['acti
     exit();
 }
 
+// Data loading
 // Get all products for filter dropdown
 $products = [];
 $productQuery = "SELECT DISTINCT i.product_name FROM inventory i ORDER BY i.product_name ASC";
@@ -103,50 +102,23 @@ if ($productResult && $productResult->num_rows > 0) {
 }
 
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stock Movement History · <?php echo htmlspecialchars(app_name(), ENT_QUOTES, 'UTF-8'); ?></title>
-    <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="../assets/favicon-16.png">
-    <link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="../style.css">
-    <style>
-        body {
-            font-family: var(--font);
-            margin: 0;
-            padding: 20px;
-            background-color: var(--bg);
-        }
-        .page-container {
-            max-width: 1400px;
-            margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-        .page-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 30px;
-            border-bottom: 2px solid #e74c3c;
-            padding-bottom: 15px;
-        }
+<?php
+// Rendering
+$page_title = 'Stock Movement History';
+$breadcrumb = ['Inventory', 'Stock History'];
+$active = 'Inventory.php';
+$extra_head = <<<'HTML'
+<style>
+        .page-container { max-width: 1400px; margin: 0 auto; }
+        .page-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 22px; }
         .page-header h1 {
             margin: 0;
-            color: #2c3e50;
+            color: #2c503d;
             font-size: 28px;
         }
         .back-button {
             padding: 8px 16px;
-            background-color: #95a5a6;
+            background-color: #95a69d;
             color: white;
             border: none;
             border-radius: 4px;
@@ -157,10 +129,10 @@ if ($productResult && $productResult->num_rows > 0) {
             transition: background-color 0.3s ease;
         }
         .back-button:hover {
-            background-color: #7f8c8d;
+            background-color: #7f8d86;
         }
         .filters-section {
-            background: #f8f9fa;
+            background: #f8faf9;
             padding: 20px;
             border-radius: 6px;
             margin-bottom: 20px;
@@ -183,13 +155,13 @@ if ($productResult && $productResult->num_rows > 0) {
         }
         .history-filter-item label {
             font-weight: bold;
-            color: #2c3e50;
+            color: #2c503d;
             font-size: 14px;
         }
         .history-filter-item input,
         .history-filter-item select {
             padding: 8px 12px;
-            border: 1px solid #bdc3c7;
+            border: 1px solid #bdc7c2;
             border-radius: 4px;
             font-size: 14px;
             font-family: inherit;
@@ -197,8 +169,8 @@ if ($productResult && $productResult->num_rows > 0) {
         .history-filter-item input:focus,
         .history-filter-item select:focus {
             outline: none;
-            border-color: #3498db;
-            box-shadow: 0 0 5px rgba(52, 152, 219, 0.3);
+            border-color: #3dd283;
+            box-shadow: 0 0 5px rgba(61, 210, 131, 0.3);
         }
         .filter-buttons {
             display: flex;
@@ -215,22 +187,22 @@ if ($productResult && $productResult->num_rows > 0) {
             transition: background-color 0.3s ease;
         }
         .filter-buttons .apply-btn {
-            background-color: #3498db;
+            background-color: #3dd283;
             color: white;
         }
         .filter-buttons .apply-btn:hover {
-            background-color: #2980b9;
+            background-color: #2bb76c;
         }
         .filter-buttons .reset-btn {
-            background-color: #95a5a6;
+            background-color: #95a69d;
             color: white;
         }
         .filter-buttons .reset-btn:hover {
-            background-color: #7f8c8d;
+            background-color: #7f8d86;
         }
         .batch-table-container {
             overflow-x: auto;
-            border: 1px solid #bdc3c7;
+            border: 1px solid #bdc7c2;
             border-radius: 6px;
         }
         .batch-table {
@@ -253,14 +225,14 @@ if ($productResult && $productResult->num_rows > 0) {
         }
         .batch-table td {
             padding: 12px;
-            border-bottom: 1px solid #ecf0f1;
+            border-bottom: 1px solid #ecf1ee;
             font-size: 14px;
         }
         .batch-table tbody tr:hover {
-            background-color: #f8f9fa;
+            background-color: #f8faf9;
         }
         .batch-table code {
-            background: #ecf0f1;
+            background: #ecf1ee;
             padding: 3px 6px;
             border-radius: 3px;
             font-size: 12px;
@@ -268,12 +240,13 @@ if ($productResult && $productResult->num_rows > 0) {
         .no-results {
             text-align: center;
             padding: 40px;
-            color: #7f8c8d;
+            color: #7f8d86;
             font-size: 16px;
         }
     </style>
-</head>
-<body>
+HTML;
+require_once __DIR__ . '/../includes/header.php';
+?>
 <div class="page-container">
     <div class="page-header">
         <h1>Stock Movement History</h1>
@@ -328,8 +301,6 @@ if ($productResult && $productResult->num_rows > 0) {
                         <th>Quantity</th>
                         <th>Cost Price</th>
                         <th>Batch Reference</th>
-                        <th>Notes</th>
-                        <th>User</th>
                     </tr>
             </thead>
             <tbody id="historyTableBody">
@@ -383,7 +354,7 @@ function populateHistoryTable(movements) {
     
     if (movements.length === 0) {
         const row = document.createElement('tr');
-        row.innerHTML = '<td colspan="8" class="no-results">No movements found</td>';
+        row.innerHTML = '<td colspan="6" class="no-results">No movements found</td>';
         tbody.appendChild(row);
         return;
     }
@@ -412,8 +383,6 @@ function populateHistoryTable(movements) {
             <td>${movement.quantity}</td>
             <td>₱${parseFloat(movement.cost_price || 0).toFixed(2)}</td>
             <td><code>${movement.batch_reference}</code></td>
-            <td><small>${movement.notes || 'N/A'}</small></td>
-            <td><em>${movement.created_by}</em></td>
         `;
         
         tbody.appendChild(row);
@@ -433,9 +402,7 @@ window.addEventListener('DOMContentLoaded', function() {
     loadStockHistory();
 });
 </script>
-</body>
-</html>
-
+<?php require_once __DIR__ . '/../includes/footer.php'; ?>
 <?php
 $conn->close();
 ?>

@@ -105,11 +105,9 @@ Fill in the form with:
 6. **Review discount amount** in "Discount" line
 7. **Proceed with "Pay"** button
 
-### Automatic Discounts
+### Wholesale Pricing
 
-The system also applies automatic discounts:
-- **Wholesale Sale Type**: Automatically applies 10% discount
-- **Promotion Rules**: If a promotion is set to auto-apply (not cashier-selectable)
+Wholesale pricing applies the configured wholesale rate when the cashier selects the **Wholesale** sale type. Promotion rules are only applied when the cashier selects one in the Discount section; leaving **None** selected records no promotion discount.
 
 ---
 

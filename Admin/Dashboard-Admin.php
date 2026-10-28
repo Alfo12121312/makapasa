@@ -10,6 +10,7 @@
  * - Uses direct SQL queries concatenating variables for date ranges (lines ~60-90). Use prepared statements.
  * - Heavy DB work on page load; consider caching or AJAX endpoints for charts (salesTrend, categoryTrend queries near lines ~110-160).
  */
+// Bootstrap and authorization
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 
@@ -18,6 +19,7 @@ $conn = app_connect();
 /* employees/attendance table schemas live in includes/app.php (bootstrapped
    on every page, including migrations) — not redefined here. */
 
+// Data loading
 $stats = [
     'products' => 0,
     'active_products' => 0,
@@ -58,6 +60,7 @@ if ($res && $res->num_rows > 0) {
 }
 
 $currentMonth = date('Y-m');
+$currentMonthLabel = date('F Y');
 $monthStart = $currentMonth . '-01';
 $monthEnd = date('Y-m-t', strtotime($monthStart));
 $revenueRes = $conn->query("SELECT COALESCE(SUM(total_price), 0) monthly_revenue FROM sales WHERE DATE(created_at) BETWEEN '$monthStart' AND '$monthEnd'");
@@ -158,39 +161,58 @@ $maxSalesTrend = !empty($salesTrendValues) ? max($salesTrendValues) : 0;
 $maxCategorySales = !empty($categoryValues) ? max($categoryValues) : 0;
 $healthOk = count($healthWarnings) === 0;
 
+// Rendering
 $page_title = 'Dashboard';
 $breadcrumb = ['Dashboard'];
 $active = 'Dashboard-Admin.php';
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
-<?php render_page_heading('Operations Analytics', 'Real-time store, sales, and HR analytics.'); ?>
+<main class="admin-dashboard">
+    <header class="dashboard-welcome">
+        <div class="dashboard-welcome-copy">
+            <span class="dashboard-kicker">STORE OPERATIONS · ADMIN</span>
+            <h1>Dashboard Overview</h1>
+            <p>A focused view of sales, stock, and team activity to help you plan the day.</p>
+        </div>
+        <div class="dashboard-date">
+            <span>Today</span>
+            <strong><?php echo date('l, F j'); ?></strong>
+            <small><?php echo htmlspecialchars($currentMonthLabel, ENT_QUOTES, 'UTF-8'); ?> at a glance</small>
+        </div>
+    </header>
 
     <?php if (!empty($lowStockProducts) || !empty($nearExpiryProducts)): ?>
-    <div class="form-container" style="border-left: 4px solid var(--warning);">
-        <h2>Alerts</h2>
-        <div class="analytics-grid">
+    <section class="dashboard-alerts">
+        <div class="dashboard-section-heading">
             <div>
-                <h3 style="margin-top:0;">Low Stock (<?php echo count($lowStockProducts); ?>)</h3>
+                <h2>Needs attention</h2>
+                <p>Items that may need action soon.</p>
+            </div>
+            <span class="dashboard-alert-count"><?php echo count($lowStockProducts) + count($nearExpiryProducts); ?> alerts</span>
+        </div>
+        <div class="dashboard-alert-grid">
+            <div class="dashboard-alert-card low-stock-alert">
+                <h3>Low stock <span><?php echo count($lowStockProducts); ?></span></h3>
                 <?php if (!empty($lowStockProducts)): ?>
                     <ul class="health-list">
                         <?php foreach ($lowStockProducts as $p): ?>
                             <li>
-                                <span class="pill <?php echo (int)$p['stock_quantity'] <= 0 ? 'pill-danger' : 'pill-warning'; ?>">
-                                    <?php echo (int)$p['stock_quantity']; ?> left
+                                <span class="pill <?php echo (float)$p['stock_quantity'] <= 0 ? 'pill-danger' : 'pill-warning'; ?>">
+                                    <?php echo fmt_qty($p['stock_quantity']); ?> left
                                 </span>
                                 <?php echo htmlspecialchars($p['product_name']); ?>
                                 <span style="color: var(--text-muted);">(<?php echo htmlspecialchars($p['category'] ?: 'Uncategorized'); ?>)</span>
                             </li>
                         <?php endforeach; ?>
                     </ul>
-                    <p><a href="Inventory.php">View inventory →</a></p>
+                    <a class="dashboard-alert-link" href="Inventory.php">Review inventory <span aria-hidden="true">→</span></a>
                 <?php else: ?>
-                    <p class="status-text ok">Nothing low on stock right now.</p>
+                    <p class="status-text ok">Stock levels are looking good.</p>
                 <?php endif; ?>
             </div>
-            <div>
-                <h3 style="margin-top:0;">Near Expiry (<?php echo count($nearExpiryProducts); ?>)</h3>
+            <div class="dashboard-alert-card expiry-alert">
+                <h3>Near expiry <span><?php echo count($nearExpiryProducts); ?></span></h3>
                 <?php if (!empty($nearExpiryProducts)): ?>
                     <ul class="health-list">
                         <?php foreach ($nearExpiryProducts as $p): ?>
@@ -199,40 +221,99 @@ require_once __DIR__ . '/../includes/header.php';
                                     <?php echo htmlspecialchars($p['expiration_status']); ?>
                                 </span>
                                 <?php echo htmlspecialchars($p['product_name']); ?>
-                                <span style="color: var(--text-muted);">— <?php echo (int)$p['total_qty']; ?> units, exp. <?php echo date('M d, Y', strtotime($p['earliest_expiration'])); ?></span>
+                                <span style="color: var(--text-muted);">— <?php echo fmt_qty($p['total_qty']); ?> units, exp. <?php echo date('M d, Y', strtotime($p['earliest_expiration'])); ?></span>
                             </li>
                         <?php endforeach; ?>
                     </ul>
-                    <p><a href="Stock-History.php">View stock history →</a></p>
+                    <a class="dashboard-alert-link" href="Stock-History.php">Review stock history <span aria-hidden="true">→</span></a>
                 <?php else: ?>
-                    <p class="status-text ok">Nothing expiring in the next 7 days.</p>
+                    <p class="status-text ok">No products nearing expiry.</p>
                 <?php endif; ?>
             </div>
         </div>
-    </div>
+    </section>
     <?php endif; ?>
 
-    <h3>Today</h3>
-    <div class="stats-grid">
-        <div class="stat-card"><div class="label">Today Sales</div><div class="value">PHP <?php echo number_format($stats['today_sales'], 2); ?></div></div>
-        <div class="stat-card"><div class="label">Today Orders</div><div class="value"><?php echo number_format($stats['today_orders']); ?></div></div>
-        <div class="stat-card"><div class="label">Active Products</div><div class="value"><?php echo number_format($stats['active_products']); ?></div></div>
-        <div class="stat-card"><div class="label">Low Stock Items</div><div class="value"><?php echo number_format($stats['low_stock']); ?></div></div>
-        <div class="stat-card"><div class="label">Active Employees</div><div class="value"><?php echo number_format($stats['employees']); ?></div></div>
-        <div class="stat-card"><div class="label">Present Today</div><div class="value"><?php echo number_format($stats['today_attendance']); ?></div></div>
-    </div>
+    <section class="dashboard-section" aria-labelledby="today-metrics-title">
+        <div class="dashboard-section-heading">
+            <div>
+                <h2 id="today-metrics-title">Today at a glance</h2>
+                <p>Sales, inventory, and attendance indicators for today.</p>
+            </div>
+            <span class="dashboard-period-tag"><?php echo date('M j, Y'); ?></span>
+        </div>
+        <div class="stats-grid dashboard-stats dashboard-stats-today">
+            <article class="stat-card dashboard-stat sales-stat">
+                <div class="dashboard-stat-top"><span class="label">Sales today</span><span class="dashboard-stat-mark" aria-hidden="true">₱</span></div>
+                <div class="value">₱<?php echo number_format($stats['today_sales'], 2); ?></div>
+                <span class="dashboard-stat-note">Recorded revenue</span>
+            </article>
+            <article class="stat-card dashboard-stat orders-stat">
+                <div class="dashboard-stat-top"><span class="label">Sales records</span><span class="dashboard-stat-mark" aria-hidden="true">#</span></div>
+                <div class="value"><?php echo number_format($stats['today_orders']); ?></div>
+                <span class="dashboard-stat-note">Entries today</span>
+            </article>
+            <article class="stat-card dashboard-stat products-stat">
+                <div class="dashboard-stat-top"><span class="label">Active products</span><span class="dashboard-stat-mark" aria-hidden="true">P</span></div>
+                <div class="value"><?php echo number_format($stats['active_products']); ?></div>
+                <span class="dashboard-stat-note">Available in inventory</span>
+            </article>
+            <article class="stat-card dashboard-stat low-stat">
+                <div class="dashboard-stat-top"><span class="label">Low stock items</span><span class="dashboard-stat-mark" aria-hidden="true">!</span></div>
+                <div class="value"><?php echo number_format($stats['low_stock']); ?></div>
+                <span class="dashboard-stat-note">Below 10 units</span>
+            </article>
+            <article class="stat-card dashboard-stat team-stat">
+                <div class="dashboard-stat-top"><span class="label">Active employees</span><span class="dashboard-stat-mark" aria-hidden="true">T</span></div>
+                <div class="value"><?php echo number_format($stats['employees']); ?></div>
+                <span class="dashboard-stat-note">Current team</span>
+            </article>
+            <article class="stat-card dashboard-stat attendance-stat">
+                <div class="dashboard-stat-top"><span class="label">Present today</span><span class="dashboard-stat-mark" aria-hidden="true">✓</span></div>
+                <div class="value"><?php echo number_format($stats['today_attendance']); ?></div>
+                <span class="dashboard-stat-note">Employees checked in</span>
+            </article>
+        </div>
+    </section>
 
-    <h3>This Month</h3>
-    <div class="stats-grid">
-        <div class="stat-card"><div class="label">Month Revenue</div><div class="value">PHP <?php echo number_format($stats['monthly_revenue'], 2); ?></div></div>
-        <div class="stat-card"><div class="label">Month Expenses</div><div class="value">PHP <?php echo number_format($stats['monthly_expenses'], 2); ?></div></div>
-        <div class="stat-card"><div class="label">Month Payroll</div><div class="value">PHP <?php echo number_format($stats['payroll_expense'] + $stats['statutory_share'], 2); ?></div></div>
-        <div class="stat-card"><div class="label">Month Net</div><div class="value">PHP <?php echo number_format($netProfit, 2); ?></div></div>
-    </div>
+    <section class="dashboard-section" aria-labelledby="monthly-metrics-title">
+        <div class="dashboard-section-heading">
+            <div>
+                <h2 id="monthly-metrics-title">Monthly performance</h2>
+                <p>Revenue and operating costs for <?php echo htmlspecialchars($currentMonthLabel, ENT_QUOTES, 'UTF-8'); ?>.</p>
+            </div>
+            <span class="dashboard-period-tag">Month to date</span>
+        </div>
+        <div class="stats-grid dashboard-stats dashboard-stats-month">
+            <article class="stat-card dashboard-stat month-revenue-stat">
+                <div class="dashboard-stat-top"><span class="label">Revenue</span><span class="dashboard-stat-mark" aria-hidden="true">↗</span></div>
+                <div class="value">₱<?php echo number_format($stats['monthly_revenue'], 2); ?></div>
+                <span class="dashboard-stat-note">Sales this month</span>
+            </article>
+            <article class="stat-card dashboard-stat expense-stat">
+                <div class="dashboard-stat-top"><span class="label">Expenses</span><span class="dashboard-stat-mark" aria-hidden="true">−</span></div>
+                <div class="value">₱<?php echo number_format($stats['monthly_expenses'], 2); ?></div>
+                <span class="dashboard-stat-note">Recorded operating costs</span>
+            </article>
+            <article class="stat-card dashboard-stat payroll-stat">
+                <div class="dashboard-stat-top"><span class="label">Payroll &amp; employer share</span><span class="dashboard-stat-mark" aria-hidden="true">T</span></div>
+                <div class="value">₱<?php echo number_format($stats['payroll_expense'] + $stats['statutory_share'], 2); ?></div>
+                <span class="dashboard-stat-note">Recorded payroll costs</span>
+            </article>
+            <article class="stat-card dashboard-stat net-stat">
+                <div class="dashboard-stat-top"><span class="label">Net after costs</span><span class="dashboard-stat-mark" aria-hidden="true">=</span></div>
+                <div class="value">₱<?php echo number_format($netProfit, 2); ?></div>
+                <span class="dashboard-stat-note">Revenue less expenses and payroll</span>
+            </article>
+        </div>
+    </section>
 
-    <div class="analytics-grid">
-        <div class="form-container">
-            <h2>7-Day Sales Trend</h2>
+    <section class="analytics-grid dashboard-analytics" aria-label="Sales analytics">
+        <article class="form-container analytics-card">
+            <div class="analytics-card-heading">
+                <div><h2>7-day sales trend</h2><p>Daily recorded revenue</p></div>
+                <span class="analytics-card-mark" aria-hidden="true">01</span>
+            </div>
             <?php if (!empty($salesTrendLabels)): ?>
                 <div class="mini-chart">
                     <?php foreach ($salesTrendLabels as $i => $label): ?>
@@ -250,9 +331,12 @@ require_once __DIR__ . '/../includes/header.php';
             <?php else: ?>
                 <p>No sales trend data available.</p>
             <?php endif; ?>
-        </div>
-        <div class="form-container">
-            <h2>Top Categories (30 Days)</h2>
+        </article>
+        <article class="form-container analytics-card">
+            <div class="analytics-card-heading">
+                <div><h2>Top categories</h2><p>Revenue contribution · last 30 days</p></div>
+                <span class="analytics-card-mark" aria-hidden="true">02</span>
+            </div>
             <?php if (!empty($categoryLabels)): ?>
                 <div class="mini-chart">
                     <?php foreach ($categoryLabels as $i => $label): ?>
@@ -270,20 +354,26 @@ require_once __DIR__ . '/../includes/header.php';
             <?php else: ?>
                 <p>No category sales data available.</p>
             <?php endif; ?>
-        </div>
-    </div>
+        </article>
+    </section>
 
-    <div class="table-section">
-        <h2>Top Products (Last 7 Days)</h2>
+    <section class="table-section dashboard-products">
+        <div class="dashboard-section-heading">
+            <div>
+                <h2>Top products</h2>
+                <p>Best-selling products by quantity · last 7 days</p>
+            </div>
+            <a class="dashboard-table-link" href="Sales-ReportAdmin.php">Open sales report <span aria-hidden="true">→</span></a>
+        </div>
         <div class="user-table-wrapper">
             <table class="userTable">
-                <thead><tr><th>Product</th><th>Qty Sold</th><th>Revenue</th></tr></thead>
+                <thead><tr><th scope="col">Product</th><th scope="col">Quantity sold</th><th scope="col">Revenue</th></tr></thead>
                 <tbody>
                 <?php if ($topProducts && $topProducts->num_rows > 0): ?>
                     <?php while ($row = $topProducts->fetch_assoc()): ?>
                     <tr>
                         <td><?php echo htmlspecialchars($row['product_name']); ?></td>
-                        <td><?php echo number_format((int)$row['qty']); ?></td>
+                        <td><?php echo fmt_qty($row['qty']); ?></td>
                         <td>PHP <?php echo number_format((float)$row['revenue'], 2); ?></td>
                     </tr>
                     <?php endwhile; ?>
@@ -293,7 +383,8 @@ require_once __DIR__ . '/../includes/header.php';
                 </tbody>
             </table>
         </div>
-    </div>
+    </section>
+</main>
 
 <?php
 require_once __DIR__ . '/../includes/footer.php';

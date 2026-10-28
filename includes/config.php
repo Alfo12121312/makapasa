@@ -1,4 +1,5 @@
 <?php
+// Default application and database settings.
 return [
     'app_name' => 'Demonteverde Agrivet',
     'db_host' => 'localhost',

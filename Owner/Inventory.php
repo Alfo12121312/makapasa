@@ -15,20 +15,22 @@ require_once __DIR__ . '/../includes/app.php';
 
 $conn = app_connect();
 
-
-
-// INVENTORY DATA 
+// Load inventory data
 $sql = "SELECT id, product_name, stock_quantity, product_unit, category, supplier, expiration_date, inventory_type
         FROM inventory
         WHERE status = 'Active'
         ORDER BY product_name ASC";
-
 $result = $conn->query($sql);
 
-// FILTER DATA
-$categories_result = $conn->query("SELECT DISTINCT category FROM inventory WHERE status='Active' AND category IS NOT NULL");
-$suppliers_result  = $conn->query("SELECT DISTINCT supplier FROM inventory WHERE status='Active' AND supplier IS NOT NULL");
+// Load filter options
+$categories_result = $conn->query("SELECT DISTINCT category
+                                   FROM inventory
+                                   WHERE status = 'Active' AND category IS NOT NULL");
+$suppliers_result = $conn->query("SELECT DISTINCT supplier
+                                  FROM inventory
+                                  WHERE status = 'Active' AND supplier IS NOT NULL");
 
+// Configure and render the page
 $context = 'owner';
 $page_title = 'Inventory';
 $breadcrumb = ['Inventory'];
@@ -36,8 +38,13 @@ $active = 'Inventory.php';
 $role_title = 'Owner';
 require_once __DIR__ . '/../includes/header.php';
 ?>
-<h1>Inventory </h1>
-<p>Owner can only view inventory data.</p>
+<div class="page-header">
+    <div>
+        <h1>Inventory</h1>
+        <p>Review current products, stock levels, suppliers, and expiration dates.</p>
+    </div>
+    <span class="chip">Owner view · Read only</span>
+</div>
 
 <!-- ✅ FILTERS -->
 <div class="search-filter-container">
@@ -113,13 +120,13 @@ require_once __DIR__ . '/../includes/header.php';
     <td><?= htmlspecialchars($row['category']) ?></td>
     <td><?= htmlspecialchars($row['supplier']) ?></td>
     <td><?= htmlspecialchars($row['inventory_type']) ?></td>
-    <td><?= $row['stock_quantity'] ?></td>
-    <td><?= $row['product_unit'] ?></td>
+    <td><?= fmt_qty($row['stock_quantity']) ?></td>
+    <td><?= htmlspecialchars(unit_label($row['product_unit'])) ?></td>
     <td><?= $row['expiration_date'] ?? 'N/A' ?></td>
 
     <td>
         <?php
-        $qty = (int)$row['stock_quantity'];
+        $qty = (float)$row['stock_quantity'];
         if ($qty <= 0) echo "<span class='status-dot dot-out'></span>Out of Stock";
         elseif ($qty < 10) echo "<span class='status-dot dot-low'></span>Low Stock";
         else echo "<span class='status-dot dot-ok'></span>In Stock";

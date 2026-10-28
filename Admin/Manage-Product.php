@@ -7,10 +7,15 @@
  * - `session_start()` at line 7 (session usage for flash messages)
  * - Direct DB connection via `new mysqli(...)` at line 10 (consider using `app_connect()` instead)
  * - Product insert/update logic and prepared statements begin around lines 60-150.
+ * - One row on this page = one PRODUCT. Unit variants created by Inventory > Stock In
+ *   (e.g. Rice in kg and in sack) share the same name, so they are grouped here, and
+ *   edit / archive / restore apply to every unit of the product together.
+ * - Names, categories and suppliers are saved in Title Case (normalize_label()).
  * Known issues / improvements:
  * - File creates tables at runtime (lines ~12-40); move to migrations.
  * - Mixing `new mysqli` and `app_connect()` reduces consistency; centralize DB connection.
  */
+// Bootstrap and authorization
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 
@@ -55,6 +60,9 @@ if ($result->num_rows == 0) {
     }
 }
 
+// One-time tidy-up of mixed upper/lower-case names already in the database.
+normalize_catalog_text_once($conn);
+
 // ═══════════════════════════════════════════════════════════════
 // DEBUGGING MODE - Remove comment to enable
 // Set to true to see debug information
@@ -71,7 +79,7 @@ function debug_add($msg) {
 
 // Helper: save new category if "others" was chosen
 function saveNewCategory($conn, $new_name) {
-    $new_name = trim($new_name);
+    $new_name = normalize_label($new_name);
     if (empty($new_name)) return false;
     $stmt = $conn->prepare("INSERT IGNORE INTO product_categories (category_name) VALUES (?)");
     $stmt->bind_param("s", $new_name);
@@ -82,7 +90,7 @@ function saveNewCategory($conn, $new_name) {
 
 // Helper: save new supplier if "others" was chosen
 function saveNewSupplier($conn, $new_name) {
-    $new_name = trim($new_name);
+    $new_name = normalize_label($new_name);
     if (empty($new_name)) return false;
     $stmt = $conn->prepare("INSERT IGNORE INTO product_suppliers (supplier_name) VALUES (?)");
     $stmt->bind_param("s", $new_name);
@@ -91,45 +99,57 @@ function saveNewSupplier($conn, $new_name) {
     return $new_name;
 }
 
+// Resolve the category / supplier chosen in the form (existing value or "Others → new").
+function resolve_category($conn) {
+    if (($_POST['category'] ?? '') === '__others__') {
+        $new = normalize_label($_POST['new_category'] ?? '');
+        return $new !== '' ? saveNewCategory($conn, $new) : '';
+    }
+    return normalize_label($_POST['category'] ?? '');
+}
+
+function resolve_supplier($conn) {
+    if (($_POST['supplier'] ?? '') === '__others__') {
+        $new = normalize_label($_POST['new_supplier'] ?? '');
+        return $new !== '' ? saveNewSupplier($conn, $new) : '';
+    }
+    return normalize_label($_POST['supplier'] ?? '');
+}
+
+// Name of the product a row id belongs to (all unit rows of a product share one name).
+function product_name_by_id($conn, $id) {
+    $stmt = $conn->prepare("SELECT product_name FROM inventory WHERE id = ?");
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $row ? $row['product_name'] : null;
+}
+
+// Input and actions
 // Handle product addition
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_product'])) {
-    $product_name   = trim($_POST['product_name']);
-    $stock_quantity = 0;
-    $product_unit   = 'pcs';
-    $price          = 0;
+    require_csrf();
+    $product_name    = normalize_label($_POST['product_name'] ?? '');
+    $stock_quantity  = 0;
+    $product_unit    = 'pcs';
+    $price           = 0;
     $expiration_date = NULL;
 
-    // Check if product name already exists
-    $checkStmt = $conn->prepare("SELECT id FROM inventory WHERE LOWER(product_name) = LOWER(?)");
+    // A product name is unique (any unit). Different units are added through Inventory > Stock In.
+    $checkStmt = $conn->prepare("SELECT id FROM inventory WHERE LOWER(TRIM(product_name)) = LOWER(?) LIMIT 1");
     $checkStmt->bind_param("s", $product_name);
     $checkStmt->execute();
-    $checkResult = $checkStmt->get_result();
+    $exists = $checkStmt->get_result()->num_rows > 0;
     $checkStmt->close();
 
-    if ($checkResult->num_rows > 0) {
-        $error_message = "Error: Product already exists! Add new stock in <a href='Inventory.php' style='color:#e53e3e;text-decoration:underline;'>Inventory.php</a>";
+    if ($exists) {
+        flash_error("\"$product_name\" already exists. To add stock or another unit, use Stock In on the Inventory page.");
     } else {
-        // Resolve category
-        if ($_POST['category'] === '__others__') {
-            $new_cat = trim($_POST['new_category'] ?? '');
-            $category = !empty($new_cat) ? saveNewCategory($conn, $new_cat) : '';
-        } else {
-            $category = trim($_POST['category']);
-        }
+        $category = resolve_category($conn);
+        $supplier = resolve_supplier($conn);
 
-        // Resolve supplier
-        if ($_POST['supplier'] === '__others__') {
-            $new_sup = trim($_POST['new_supplier'] ?? '');
-            $supplier = !empty($new_sup) ? saveNewSupplier($conn, $new_sup) : '';
-        } else {
-            $supplier = trim($_POST['supplier']);
-        }
-
-        $valid = !empty($product_name)
-              && !empty($category)
-              && !empty($supplier);
-
-        if ($valid) {
+        if ($product_name !== '' && $category !== '' && $supplier !== '') {
             $stmt = $conn->prepare("INSERT INTO inventory (product_name, stock_quantity, category, supplier, product_unit, price, expiration_date, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
             $status = 'Active';
             $stmt->bind_param("sssssdss", $product_name, $stock_quantity, $category, $supplier, $product_unit, $price, $expiration_date, $status);
@@ -147,130 +167,151 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['add_product'])) {
     exit();
 }
 
-// Handle product editing
+// Handle product editing — applies to every unit row of the product
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['edit_product'])) {
-    $product_id   = (int)$_POST['product_id'];
-    $product_name = trim($_POST['product_name']);
+    require_csrf();
+    $product_id   = (int)($_POST['product_id'] ?? 0);
+    $product_name = normalize_label($_POST['product_name'] ?? '');
+    $old_name     = product_name_by_id($conn, $product_id);
 
-    // Check if product name already exists (excluding current product)
-    $checkStmt = $conn->prepare("SELECT id FROM inventory WHERE LOWER(product_name) = LOWER(?) AND id != ?");
-    $checkStmt->bind_param("si", $product_name, $product_id);
-    $checkStmt->execute();
-    $checkResult = $checkStmt->get_result();
-    $checkStmt->close();
-
-    if ($checkResult->num_rows > 0) {
-        flash_error("Product already exists! Add new stock from the Inventory page instead.");
+    if ($old_name === null) {
+        flash_error("That product no longer exists.");
     } else {
-        // Resolve category
-        if ($_POST['category'] === '__others__') {
-            $new_cat = trim($_POST['new_category'] ?? '');
-            $category = !empty($new_cat) ? saveNewCategory($conn, $new_cat) : '';
+        // The new name must not belong to a DIFFERENT product.
+        $checkStmt = $conn->prepare("SELECT id FROM inventory
+                                     WHERE LOWER(TRIM(product_name)) = LOWER(?)
+                                       AND LOWER(TRIM(product_name)) <> LOWER(TRIM(?)) LIMIT 1");
+        $checkStmt->bind_param("ss", $product_name, $old_name);
+        $checkStmt->execute();
+        $taken = $checkStmt->get_result()->num_rows > 0;
+        $checkStmt->close();
+
+        if ($taken) {
+            flash_error("Product already exists! Add new stock from the Inventory page instead.");
         } else {
-            $category = trim($_POST['category']);
-        }
+            $category = resolve_category($conn);
+            $supplier = resolve_supplier($conn);
 
-        // Resolve supplier
-        if ($_POST['supplier'] === '__others__') {
-            $new_sup = trim($_POST['new_supplier'] ?? '');
-            $supplier = !empty($new_sup) ? saveNewSupplier($conn, $new_sup) : '';
-        } else {
-            $supplier = trim($_POST['supplier']);
-        }
-
-        $valid = !empty($product_name)
-              && !empty($category)
-              && !empty($supplier);
-
-        if ($valid) {
-            $stmt = $conn->prepare("UPDATE inventory SET product_name = ?, category = ?, supplier = ? WHERE id = ?");
-            $stmt->bind_param("sssi", $product_name, $category, $supplier, $product_id);
-            if ($stmt->execute()) {
-                flash_success("Product \"$product_name\" updated successfully!");
+            if ($product_name !== '' && $category !== '' && $supplier !== '') {
+                $stmt = $conn->prepare("UPDATE inventory SET product_name = ?, category = ?, supplier = ?
+                                        WHERE LOWER(TRIM(product_name)) = LOWER(TRIM(?))");
+                $stmt->bind_param("ssss", $product_name, $category, $supplier, $old_name);
+                if ($stmt->execute()) {
+                    flash_success("Product \"$product_name\" updated successfully!");
+                } else {
+                    flash_error("Error updating product: " . $stmt->error);
+                }
+                $stmt->close();
             } else {
-                flash_error("Error updating product: " . $stmt->error);
+                flash_error("Product name, category, and supplier are required!");
             }
-            $stmt->close();
-        } else {
-            flash_error("Product name, category, and supplier are required!");
         }
     }
     header("Location: " . $_SERVER['PHP_SELF']);
     exit();
 }
 
-// Handle status toggle
+// Handle status toggle — archives / restores every unit row of the product
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['toggle_status'])) {
-    $product_id = (int)$_POST['product_id'];
-    
-    debug_add("Toggle Status Request - Product ID: " . $product_id);
+    require_csrf();
+    $product_id = (int)($_POST['product_id'] ?? 0);
+    $name = product_name_by_id($conn, $product_id);
 
-    $stmt = $conn->prepare("SELECT status FROM inventory WHERE id = ?");
-    $stmt->bind_param("i", $product_id);
-    $stmt->execute();
-    $result_toggle = $stmt->get_result();
-    $row_toggle = $result_toggle->fetch_assoc();
-    $stmt->close();
-    
-    debug_add("Current Status from DB: " . json_encode($row_toggle));
-    
-    // Get current status - handle NULL, empty, and 'Hidden' values
-    $current_status = $row_toggle['status'] ?? null;
-    
-    // Normalize: treat NULL, empty, and 'Hidden' as 'Inactive'
-    if (empty($current_status) || $current_status === 'Hidden') {
-        $current_status = 'Inactive';
-    }
-    
-    // Ensure value is valid enum
-    if ($current_status !== 'Active' && $current_status !== 'Inactive') {
-        $current_status = 'Active'; // Default
-    }
-    
-    debug_add("Parsed Current Status: " . $current_status);
-    
-    // Toggle status
-    $new_status = ($current_status === 'Active') ? 'Inactive' : 'Active';
-    
-    debug_add("New Status to Set: " . $new_status);
-
-    $stmt = $conn->prepare("UPDATE inventory SET status = ? WHERE id = ?");
-    $stmt->bind_param("si", $new_status, $product_id);
-    
-    if ($stmt->execute()) {
-        debug_add("Update Success - Rows Affected: " . $stmt->affected_rows);
-        
-        // Verify the update
-        $verify = $conn->prepare("SELECT id, product_name, status FROM inventory WHERE id = ?");
-        $verify->bind_param("i", $product_id);
-        $verify->execute();
-        $verify_result = $verify->get_result();
-        $verify_row = $verify_result->fetch_assoc();
-        $verify->close();
-        
-        debug_add("Verification After Update: " . json_encode($verify_row));
-        
-        // Store success message and redirect
-        flash_success("Product status updated to " . $new_status . " successfully!");
-
-        header("Location: " . $_SERVER['PHP_SELF']);
-        exit();
+    if ($name === null) {
+        flash_error("That product no longer exists.");
     } else {
-        debug_add("Update Failed: " . $stmt->error);
-        flash_error("Error updating status: " . $stmt->error);
+        $stmt = $conn->prepare("SELECT COUNT(*) AS active_rows FROM inventory
+                                WHERE LOWER(TRIM(product_name)) = LOWER(TRIM(?)) AND status = 'Active'");
+        $stmt->bind_param("s", $name);
+        $stmt->execute();
+        $activeRows = (int)$stmt->get_result()->fetch_assoc()['active_rows'];
+        $stmt->close();
+
+        $new_status = $activeRows > 0 ? 'Inactive' : 'Active';
+        $stmt = $conn->prepare("UPDATE inventory SET status = ? WHERE LOWER(TRIM(product_name)) = LOWER(TRIM(?))");
+        $stmt->bind_param("ss", $new_status, $name);
+        if ($stmt->execute()) {
+            flash_success("Product status updated to " . $new_status . " successfully!");
+        } else {
+            flash_error("Error updating status: " . $stmt->error);
+        }
+        $stmt->close();
     }
-    $stmt->close();
+    header("Location: " . $_SERVER['PHP_SELF']);
+    exit();
 }
 
 // Retrieve all products
-$sql = "SELECT id, product_name, stock_quantity, category, supplier, product_unit, price, expiration_date, status, date_added FROM inventory ORDER BY date_added DESC";
+// Data loading
+$sql = "SELECT id, product_name, stock_quantity, category, supplier, product_unit, status, date_added
+        FROM inventory
+        ORDER BY date_added DESC";
 $result = $conn->query($sql);
 
+// One entry per product: unit rows that share a name are merged.
+$unitShort = [
+    'kls' => 'kg',
+    'kg' => 'kg',
+    'kgs' => 'kg',
+    'kilo' => 'kg',
+    'kilos' => 'kg',
+    'pc' => 'pcs',
+    'pcs' => 'pcs',
+    'piece' => 'pcs',
+    'pieces' => 'pcs',
+];
+$productList = [];
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $key = mb_strtolower(trim($row['product_name']));
+        $rowStatus = (empty($row['status']) || $row['status'] === 'Hidden') ? 'Inactive' : $row['status'];
+        $u = strtolower(trim((string)$row['product_unit']));
+        $unitLabel = $unitShort[$u] ?? $u;
+
+        if (!isset($productList[$key])) {
+            $productList[$key] = [
+                'id'         => (int)$row['id'],
+                'name'       => normalize_label($row['product_name']),
+                'category'   => normalize_label($row['category']),
+                'supplier'   => normalize_label($row['supplier']),
+                'status'     => $rowStatus,
+                'date_added' => $row['date_added'],
+                'units'      => [],
+            ];
+        } else {
+            if ($rowStatus === 'Active') {
+                $productList[$key]['status'] = 'Active';
+            }
+            if ($row['date_added'] < $productList[$key]['date_added']) {
+                $productList[$key]['date_added'] = $row['date_added'];
+            }
+        }
+        if ($unitLabel !== '') {
+            $productList[$key]['units'][$unitLabel] = true;
+        }
+    }
+}
+usort($productList, function ($a, $b) { return strcmp($b['date_added'], $a['date_added']); });
+$productSummary = ['total' => count($productList), 'active' => 0, 'inactive' => 0];
+foreach ($productList as $listedProduct) {
+    if ($listedProduct['status'] === 'Active') {
+        $productSummary['active']++;
+    } else {
+        $productSummary['inactive']++;
+    }
+}
+
 $categoryOptions = [];
-$categoryResult = $conn->query("SELECT category_name AS value FROM product_categories WHERE is_active = 1
-                                UNION
-                                SELECT DISTINCT category AS value FROM inventory WHERE category IS NOT NULL AND category <> ''
-                                ORDER BY value ASC");
+$categoryResult = $conn->query(
+    "SELECT category_name AS value
+     FROM product_categories
+     WHERE is_active = 1
+     UNION
+     SELECT DISTINCT category AS value
+     FROM inventory
+     WHERE category IS NOT NULL AND category <> ''
+     ORDER BY value ASC"
+);
 if ($categoryResult) {
     while ($row = $categoryResult->fetch_assoc()) {
         $categoryOptions[] = $row['value'];
@@ -278,15 +319,23 @@ if ($categoryResult) {
 }
 
 $supplierOptions = [];
-$supplierResult = $conn->query("SELECT supplier_name AS value FROM product_suppliers WHERE is_active = 1
-                                UNION
-                                SELECT DISTINCT supplier AS value FROM inventory WHERE supplier IS NOT NULL AND supplier <> ''
-                                ORDER BY value ASC");
+$supplierResult = $conn->query(
+    "SELECT supplier_name AS value
+     FROM product_suppliers
+     WHERE is_active = 1
+     UNION
+     SELECT DISTINCT supplier AS value
+     FROM inventory
+     WHERE supplier IS NOT NULL AND supplier <> ''
+     ORDER BY value ASC"
+);
 if ($supplierResult) {
     while ($row = $supplierResult->fetch_assoc()) {
         $supplierOptions[] = $row['value'];
     }
 }
+
+// Rendering
 $page_title = 'Products';
 $breadcrumb = ['Inventory', 'Products'];
 $active = 'Manage-Product.php';
@@ -469,7 +518,7 @@ ob_start();
             }
             .form-field input:focus, .form-field select:focus {
                 background:0 0 0 3px rgba(255, 255, 255, 0.31); border-color:#4ade80;
-                box-shadow:0 0 0 3px rgba(0, 0, 255, 0.21);
+                box-shadow:0 0 0 3px rgba(48, 207, 122, 0.21);
             }
             .others-input input { background:white; border-color:#b07d00; color:#eee; }
             .others-hint { color:#777; }
@@ -486,83 +535,99 @@ $extra_head = ob_get_clean();
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
-<?php render_page_heading('Products', 'Add, edit, and manage product details here.'); ?>
+<main class="admin-products-page">
+    <header class="admin-products-heading">
+        <div>
+            <span class="admin-products-eyebrow">INVENTORY CATALOG</span>
+            <h1>Products</h1>
+            <p>Manage product details and organize the items available in your catalog.</p>
+        </div>
+        <button type="button" class="admin-products-add" onclick="showAddProduct()">
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            Add product
+        </button>
+    </header>
 
-<div class="app-toolbar">
-    <button type="button" class="btn btn-primary" onclick="showAddProduct()">+ Add Product</button>
-    <div class="search-field">
-        <span class="search-icon">🔍</span>
-        <input type="text" id="searchInput" placeholder="Search by product name…" onkeyup="searchTable('searchInput', 'manageProductTable')">
-    </div>
-    <select id="categoryFilter" class="filter-select" onchange="filterByCategory('categoryFilter', 'manageProductTable')">
-        <option value="">All Categories</option>
-        <?php foreach ($categoryOptions as $option): ?>
-            <option value="<?php echo htmlspecialchars($option); ?>"><?php echo htmlspecialchars($option); ?></option>
-        <?php endforeach; ?>
-    </select>
-    <select id="supplierFilter" class="filter-select" onchange="filterBySupplier('supplierFilter', 'manageProductTable')">
-        <option value="">All Suppliers</option>
-        <?php foreach ($supplierOptions as $option): ?>
-            <option value="<?php echo htmlspecialchars($option); ?>"><?php echo htmlspecialchars($option); ?></option>
-        <?php endforeach; ?>
-    </select>
-    <select id="statusFilter" class="filter-select" onchange="filterByStatus('statusFilter', 'manageProductTable')">
-        <option value="">All Statuses</option>
-        <option value="Active">Active</option>
-        <option value="Inactive">Inactive</option>
-    </select>
-    <span class="toolbar-spacer"></span>
-    <span class="toolbar-count"><?php echo (int)$result->num_rows; ?> products</span>
-</div>
+    <section class="admin-products-summary" aria-label="Product summary">
+        <span><strong><?php echo number_format($productSummary['total']); ?></strong> products</span>
+        <span><strong><?php echo number_format($productSummary['active']); ?></strong> active</span>
+        <span><strong><?php echo number_format($productSummary['inactive']); ?></strong> archived</span>
+        <span><strong><?php echo number_format(count($categoryOptions)); ?></strong> categories</span>
+    </section>
 
-<div class="app-table-wrapper">
+    <section class="admin-products-catalog">
+        <div class="admin-products-toolbar">
+            <div class="admin-products-controls">
+                <label class="admin-products-search" for="searchInput">
+                    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="8.8" cy="8.8" r="5.8" stroke="currentColor" stroke-width="1.5"/><path d="m13.2 13.2 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    <input type="search" id="searchInput" placeholder="Search product, category, or supplier" oninput="filterProducts()">
+                </label>
+                <label class="sr-only" for="categoryFilter">Filter by category</label>
+                <select id="categoryFilter" class="filter-select" onchange="filterProducts()">
+                    <option value="">All categories</option>
+                    <?php foreach ($categoryOptions as $option): ?>
+                        <option value="<?php echo htmlspecialchars($option, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($option, ENT_QUOTES, 'UTF-8'); ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <label class="sr-only" for="supplierFilter">Filter by supplier</label>
+                <select id="supplierFilter" class="filter-select" onchange="filterProducts()">
+                    <option value="">All suppliers</option>
+                    <?php foreach ($supplierOptions as $option): ?>
+                        <option value="<?php echo htmlspecialchars($option, ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($option, ENT_QUOTES, 'UTF-8'); ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <label class="sr-only" for="statusFilter">Filter by status</label>
+                <select id="statusFilter" class="filter-select" onchange="filterProducts()">
+                    <option value="">All statuses</option>
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Archived</option>
+                </select>
+            </div>
+        </div>
+
+<div class="app-table-wrapper admin-products-table-wrap">
     <table id="manageProductTable" class="userTable">
         <thead>
             <tr>
-                <th>Product Name</th>
+                <th>Product</th>
                 <th>Category</th>
                 <th>Supplier</th>
                 <th>Status</th>
-                <th>Date Added</th>
-                <th style="width:56px;"></th>
+                <th>Added</th>
+                <th>Units</th>
+                <th class="admin-products-actions-heading"><span class="sr-only">Actions</span></th>
             </tr>
         </thead>
         <tbody>
-            <?php if ($result->num_rows > 0): ?>
-                <?php while ($row = $result->fetch_assoc()): ?>
+            <?php if (count($productList) > 0): ?>
+                <?php foreach ($productList as $product):
+                    $is_active = ($product['status'] === 'Active');
+                    $pill_class = $is_active ? 'pill-success' : 'pill-neutral';
+                ?>
                 <tr>
-                    <td><?php echo htmlspecialchars($row['product_name']); ?></td>
-                    <td><?php echo htmlspecialchars($row['category']); ?></td>
-                    <td><?php echo htmlspecialchars($row['supplier']); ?></td>
-                    <td><?php
-                        // Normalize status for display: treat NULL, empty, or 'Hidden' as 'Inactive'
-                        $display_status = $row['status'];
-                        if (empty($display_status) || $display_status === 'Hidden') {
-                            $display_status = 'Inactive';
-                        }
-                        $pill_class = $display_status === 'Active' ? 'pill-success' : 'pill-neutral';
-                        echo '<span class="pill ' . $pill_class . '">' . htmlspecialchars($display_status) . '</span>';
-                    ?></td>
-                    <td><?php echo $row['date_added']; ?></td>
+                    <td><strong class="admin-products-name"><?php echo htmlspecialchars($product['name'], ENT_QUOTES, 'UTF-8'); ?></strong></td>
+                    <td><?php echo htmlspecialchars($product['category'], ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td><?php echo htmlspecialchars($product['supplier'], ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td><span class="pill <?php echo $pill_class; ?>"><?php echo htmlspecialchars($product['status']); ?></span></td>
+                    <td><?php echo $product['date_added'] ? date('M j, Y', strtotime($product['date_added'])) : '—'; ?></td>
                     <td>
-                        <?php
-                            $btn_status = $row['status'];
-                            if (empty($btn_status) || $btn_status === 'Hidden') {
-                                $btn_status = 'Inactive';
-                            }
-                            $is_active = ($btn_status === 'Active');
-                        ?>
+                        <?php foreach (array_keys($product['units']) as $unitName): ?>
+                            <span class="admin-products-unit"><?php echo htmlspecialchars($unitName, ENT_QUOTES, 'UTF-8'); ?></span>
+                        <?php endforeach; ?>
+                    </td>
+                    <td>
                         <div class="row-menu">
                             <button type="button" class="row-menu-trigger" aria-label="Row actions">⋮</button>
                             <div class="row-menu-list">
                                 <button type="button" onclick='editProduct(
-                                    <?php echo json_encode($row["id"]); ?>,
-                                    <?php echo json_encode($row["product_name"]); ?>,
-                                    <?php echo json_encode($row["category"]); ?>,
-                                    <?php echo json_encode($row["supplier"]); ?>
+                                    <?php echo json_encode($product["id"]); ?>,
+                                    <?php echo json_encode($product["name"]); ?>,
+                                    <?php echo json_encode($product["category"]); ?>,
+                                    <?php echo json_encode($product["supplier"]); ?>
                                 )'>Edit</button>
                                 <form method="post" action="">
-                                    <input type="hidden" name="product_id" value="<?php echo $row['id']; ?>">
+                                    <?php csrf_field(); ?>
+                                    <input type="hidden" name="product_id" value="<?php echo (int)$product['id']; ?>">
                                     <button type="submit" name="toggle_status" class="<?php echo $is_active ? 'danger' : ''; ?>">
                                         <?php echo $is_active ? 'Archive' : 'Restore'; ?>
                                     </button>
@@ -571,9 +636,12 @@ require_once __DIR__ . '/../includes/header.php';
                         </div>
                     </td>
                 </tr>
-                <?php endwhile; ?>
+                <?php endforeach; ?>
+                <tr class="admin-products-no-results" id="productsNoResults" hidden>
+                    <td colspan="7">No products match these search and filter options.</td>
+                </tr>
             <?php else: ?>
-                <tr data-empty-row><td colspan="6">
+                <tr data-empty-row><td colspan="7">
                     <div class="app-empty-state">
                         <div class="empty-icon">📦</div>
                         <h3>No products yet</h3>
@@ -605,6 +673,7 @@ require_once __DIR__ . '/../includes/header.php';
             <div class="validation-summary" id="addValidationSummary"></div>
 
             <form method="post" action="" id="addProductForm" onsubmit="return validateProductForm('add')">
+                <?php csrf_field(); ?>
 
                 <div class="form-section-label">Product info</div>
 
@@ -690,6 +759,7 @@ require_once __DIR__ . '/../includes/header.php';
             <div class="validation-summary" id="editValidationSummary"></div>
 
             <form method="post" action="" id="editProductForm" onsubmit="return validateProductForm('edit')">
+                <?php csrf_field(); ?>
                 <input type="hidden" id="edit_product_id" name="product_id">
 
                 <div class="form-section-label">Product info</div>
@@ -930,18 +1000,26 @@ function validateProductForm(prefix) {
     return true; // allow submission
 }
 
-/* ══════════════════════════════════════════════
-   STATUS FILTER
-══════════════════════════════════════════════ */
-function filterByStatus(statusFilterId, tableId) {
-    const selectedStatus = document.getElementById(statusFilterId).value;
-    const rows = document.getElementById(tableId).getElementsByTagName('tr');
-    for (let i = 1; i < rows.length; i++) {
-        const cells = rows[i].getElementsByTagName('td');
-        const statusCell = cells[3];
-        if (!statusCell) { rows[i].style.display = ''; continue; }
-        rows[i].style.display = (!selectedStatus || statusCell.textContent.trim() === selectedStatus) ? '' : 'none';
-    }
+function filterProducts() {
+    const table = document.getElementById('manageProductTable');
+    if (!table) return;
+    const search = (document.getElementById('searchInput')?.value || '').trim().toLowerCase();
+    const category = document.getElementById('categoryFilter')?.value || '';
+    const supplier = document.getElementById('supplierFilter')?.value || '';
+    const status = document.getElementById('statusFilter')?.value || '';
+    const rows = Array.from(table.querySelectorAll('tbody tr:not(.admin-products-no-results):not([data-empty-row])'));
+    let visible = 0;
+    rows.forEach(row => {
+        const cells = row.cells;
+        const matches = (!search || row.textContent.toLowerCase().includes(search))
+            && (!category || cells[1]?.textContent.trim() === category)
+            && (!supplier || cells[2]?.textContent.trim() === supplier)
+            && (!status || cells[3]?.textContent.trim() === status);
+        row.hidden = !matches;
+        if (matches) visible++;
+    });
+    const noResults = document.getElementById('productsNoResults');
+    if (noResults) noResults.hidden = visible > 0;
 }
 </script>
 <?php

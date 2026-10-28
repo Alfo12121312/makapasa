@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Demonteverde Agrivet — Operations Improvements</title>
+  <style>
+    :root {
+      --ink: #1a1c18;
+      --muted: #4a5248;
+      --line: #d5d9d0;
+      --p0: #8b1e1e;
+      --p0-bg: #f8ecec;
+      --p1: #8a5a12;
+      --p1-bg: #f7f0e4;
+      --p2: #1f4d6e;
+      --p2-bg: #eaf2f6;
+      --paper: #fff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Calibri, Arial, sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.45;
+    }
+    .page {
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 36px 44px 56px;
+    }
+    h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -0.02em; }
+    h2 {
+      font-size: 16px;
+      margin: 28px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--line);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    h3 { font-size: 14px; margin: 0 0 6px; }
+    p, li { font-size: 13px; color: var(--ink); }
+    .lede { color: var(--muted); font-size: 13.5px; margin: 0 0 18px; }
+    .meta { font-size: 12px; color: var(--muted); margin-bottom: 22px; }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin: 18px 0 20px;
+    }
+    .kpi {
+      border: 1px solid var(--line);
+      padding: 12px 12px 10px;
+    }
+    .kpi strong { display: block; font-size: 22px; line-height: 1.1; }
+    .kpi span { font-size: 11px; color: var(--muted); }
+    .callout {
+      background: var(--p1-bg);
+      border: 1px solid #e3d3b4;
+      padding: 12px 14px;
+      font-size: 13px;
+      margin: 14px 0 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin: 8px 0 6px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      padding: 8px 8px 8px 0;
+    }
+    th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); }
+    .badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      padding: 2px 6px;
+    }
+    .p0 { color: var(--p0); background: var(--p0-bg); }
+    .p1 { color: var(--p1); background: var(--p1-bg); }
+    .p2 { color: var(--p2); background: var(--p2-bg); }
+    .item {
+      border: 1px solid var(--line);
+      padding: 12px 14px;
+      margin: 10px 0;
+      page-break-inside: avoid;
+    }
+    .item .why, .item .add { margin: 6px 0 0; }
+    .item .ev { font-size: 11px; color: var(--muted); margin: 2px 0 8px; }
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    ul { margin: 6px 0 0; padding-left: 18px; }
+    footer {
+      margin-top: 28px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    @media print {
+      .page { padding: 12mm 14mm 16mm; max-width: none; }
+      .item, .callout, .kpi { break-inside: avoid; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>Demonteverde Agrivet — Operations Improvements</h1>
+    <p class="lede">Review of the live PHP POS (Admin / Cashier / Owner) against how a feed-and-vet counter actually runs: sack vs kilo, expiry, layaway, GCash, farm credit, and end-of-day cash. Grounded in the current New_Demonteverde modules, not a generic POS checklist.</p>
+    <p class="meta">Prepared 3 October 2026 · Roles: Admin, Cashier, Owner · Database: agrivet_db</p>
+
+    <div class="kpis">
+      <div class="kpi"><strong>4</strong><span>Must-fix (P0)</span></div>
+      <div class="kpi"><strong>7</strong><span>This quarter (P1)</span></div>
+      <div class="kpi"><strong>3</strong><span>Later (P2)</span></div>
+      <div class="kpi"><strong>3</strong><span>User roles in the app</span></div>
+    </div>
+
+    <div class="callout">
+      <strong>The store will feel these first.</strong>
+      Cash will not match the drawer whenever anyone pays GCash. Purchase orders do not restock the shelf. A finished sale cannot be reversed. A reprint of a basket is incomplete. Fix those four before adding new modules.
+    </div>
+
+    <h2>What the system already does well</h2>
+    <p>Shift start/close, FIFO stock out, sack-to-kg auto conversion, Display vs Warehouse, near-expiry on the admin dashboard, cashier-selectable promos, layaway stock reserve on create/cancel, SSS/PhilHealth/Pag-IBIG shares, and Owner read-only reports. Build on these instead of replacing them.</p>
+
+    <h2>Summary of gaps</h2>
+    <table>
+      <thead>
+        <tr><th>Urgency</th><th>Area</th><th>Gap</th><th>Real-life problem</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="badge p0">P0</span></td><td>Counter</td><td>Sale returns and voids after payment</td><td>Void only clears the cart. After checkout there is no stock or money reverse.</td></tr>
+        <tr><td><span class="badge p0">P0</span></td><td>Counter</td><td>Receipt reprint shows one line</td><td>A multi-item sale reprints as a single product row.</td></tr>
+        <tr><td><span class="badge p0">P0</span></td><td>Cash</td><td>Expected drawer includes GCash/Maya/card</td><td>Digital sales inflate expected cash; the count always looks short.</td></tr>
+        <tr><td><span class="badge p0">P0</span></td><td>Stock</td><td>Receiving a PO does not add inventory</td><td>Status flips to Received; the shelf is not restocked.</td></tr>
+        <tr><td><span class="badge p1">P1</span></td><td>Cash</td><td>One shift per cashier per calendar day</td><td>No morning/afternoon handoff; start can reopen a closed day.</td></tr>
+        <tr><td><span class="badge p1">P1</span></td><td>Cash</td><td>Cash-in / cash-out unused</td><td>Petty cash and drawer pull-outs have nowhere to go.</td></tr>
+        <tr><td><span class="badge p1">P1</span></td><td>Credit</td><td>Layaway collections miss the shift</td><td>End-of-day cash will not tie to POS sales.</td></tr>
+        <tr><td><span class="badge p1">P1</span></td><td>Credit</td><td>No farm credit / charge account</td><td>Sales are not tied to a customer; utang stays in a notebook.</td></tr>
+        <tr><td><span class="badge p1">P1</span></td><td>Stock</td><td>No physical count or spoilage write-off</td><td>Shrinkage and expired meds cannot hit the books cleanly.</td></tr>
+        <tr><td><span class="badge p1">P1</span></td><td>Reports</td><td>Profit uses current cost, not batch cost</td><td>After a mill price hike, COGS and margin are wrong.</td></tr>
+        <tr><td><span class="badge p1">P1</span></td><td>HR</td><td>Payroll silently overwrites on page load</td><td>Peeking at a cutoff rewrites pay records and P&amp;L.</td></tr>
+        <tr><td><span class="badge p2">P2</span></td><td>Counter</td><td>No held cart, split tender, or supervisor PIN</td><td>Peak-hour park, cash+GCash split, and manager override missing.</td></tr>
+        <tr><td><span class="badge p2">P2</span></td><td>Stock</td><td>One low-stock number for every SKU</td><td>A sack of rice and a 10 ml vial share threshold 10.</td></tr>
+        <tr><td><span class="badge p2">P2</span></td><td>Reports</td><td>No in-app backup / Z-report</td><td>XAMPP or power cut can lose a day’s work.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>P0 — Must fix</h2>
+
+    <div class="item">
+      <h3>1. Sale returns and voids after payment</h3>
+      <p class="ev">Area: Counter · Evidence: pos.js posVoidOrder(); process_sale.php has no reverse path</p>
+      <p class="why"><strong>Why it hurts.</strong> Void only clears the cart before checkout. After a sale posts, there is no way to reverse stock, money, or the receipt. Wrong product, customer change of mind, or spoiled feed after bagging all require a paper workaround.</p>
+      <p class="add"><strong>What to add.</strong> Admin-approved return/void on a sale reference: restore FIFO stock, reverse shift totals by payment method, print a return slip, and keep an audit trail.</p>
+    </div>
+
+    <div class="item">
+      <h3>2. Receipt reprint shows one line of a multi-item sale</h3>
+      <p class="ev">Area: Counter · Evidence: Cashier/Receipts.php WHERE s.id = ?; sales is line-item grain</p>
+      <p class="why"><strong>Why it hurts.</strong> A cart is stored as several sales rows sharing sale_reference, but Receipts.php loads a single sales.id. The customer gets an incomplete reprint, which fails disputes, GCash claims, and a proper paper trail.</p>
+      <p class="add"><strong>What to add.</strong> Reprint by sale_reference: all lines, store name/address, payment method, change, cashier, and a sequential OR number.</p>
+    </div>
+
+    <div class="item">
+      <h3>3. Expected drawer cash includes GCash, Maya, and card</h3>
+      <p class="ev">Area: Cash · Evidence: POS.php expectedDrawerCash; Shift-Report.php same formula</p>
+      <p class="why"><strong>Why it hurts.</strong> Closing expected cash is opening + cash_in + total_sales − cash_out. process_sale.php adds every payment method into total_sales. A busy day with digital payments always looks short, so cashiers get blamed or count cash by notebook.</p>
+      <p class="add"><strong>What to add.</strong> Split shift totals into cash vs cashless. Expected cash = opening + cash sales + cash-in − cash-out − cash refunds. Show tender mix on the close screen.</p>
+    </div>
+
+    <div class="item">
+      <h3>4. Receiving a purchase order does not add inventory</h3>
+      <p class="ev">Area: Stock · Evidence: Admin/Purchasing.php set_status UPDATE only; free-text item_name</p>
+      <p class="why"><strong>Why it hurts.</strong> Marking a PO Received only flips status. No stock_movements IN, no cost update, no expiry batch. Deliveries from feed mills get recorded twice or forgotten, so POS stock and the storeroom diverge.</p>
+      <p class="add"><strong>What to add.</strong> Receive against a product SKU: qty, unit cost, expiry, batch. Post IN movement, update on-hand, optionally land cost into cost_price.</p>
+    </div>
+
+    <h2>P1 — This quarter</h2>
+
+    <div class="item">
+      <h3>5. One shift per cashier per calendar day, and start can reopen it</h3>
+      <p class="ev">Area: Cash · Evidence: cashier_sessions UNIQUE KEY; POS.php start_day upsert</p>
+      <p class="why"><strong>Why it hurts.</strong> Unique (cashier_id, session_date) blocks morning/afternoon handoff. Start shift uses ON DUPLICATE KEY UPDATE, which can reopen a closed day and reset started_at. Overnight or split-shift counters cannot close cleanly.</p>
+      <p class="add"><strong>What to add.</strong> Allow multiple open/closed sessions per day. Never reopen a closed shift; start a new one. Record counted vs expected variance.</p>
+    </div>
+
+    <div class="item">
+      <h3>6. Cash-in / cash-out fields exist but are never used</h3>
+      <p class="ev">Area: Cash · Evidence: Schema columns; no INSERT/UPDATE of cash_in or cash_out in app code</p>
+      <p class="why"><strong>Why it hurts.</strong> Petty cash, change fund top-up, COD to a supplier from the drawer, and owner pull-outs happen every week. The UI shows cash_in/cash_out as zeros, so the close count cannot match reality even if sales tender is fixed.</p>
+      <p class="add"><strong>What to add.</strong> Paid-in / paid-out with reason, amount, and who authorized. Tie optional expenses paid from the drawer to the open shift.</p>
+    </div>
+
+    <div class="item">
+      <h3>7. Layaway collections never hit the cashier shift</h3>
+      <p class="ev">Area: Credit · Evidence: Admin/Layaway.php and Cashier/Layaway.php; no cashier_sessions update</p>
+      <p class="why"><strong>Why it hurts.</strong> Down payments and balance collections are stored on layaway_payments only. End-of-day cash is higher than POS sales, so the drawer never ties. Overdue layaways have no due date, reminder list, or forfeit rule.</p>
+      <p class="add"><strong>What to add.</strong> Post collections to the open shift by tender. Due date, overdue board, partial-release rules, and forfeit/cancel with stock return (already partly there).</p>
+    </div>
+
+    <div class="item">
+      <h3>8. No farm credit / charge account on the POS</h3>
+      <p class="ev">Area: Credit · Evidence: customers table unused at POS; sales has no customer_id</p>
+      <p class="why"><strong>Why it hurts.</strong> Customers exist only as a name list. Sales are not linked to a customer. Agrivet shops routinely sell feeds and meds on account until harvest or payday. Today that lives in a notebook, so collections and disputes are invisible to reports.</p>
+      <p class="add"><strong>What to add.</strong> Attach customer on checkout, credit limit, outstanding balance, payment-on-account, and aging (7/15/30 days). Block cashier over-limit without admin PIN.</p>
+    </div>
+
+    <div class="item">
+      <h3>9. No physical count or spoilage write-off</h3>
+      <p class="ev">Area: Stock · Evidence: Dashboard low stock &lt; 10 hardcoded; get_near_expiration_products is display-only</p>
+      <p class="why"><strong>Why it hurts.</strong> Rats, torn sacks, expired vaccines, and mis-picks make book stock wrong. Display vs Warehouse transfer exists, FIFO OUT exists, but there is no count sheet, variance, or expiry disposal that hits COGS.</p>
+      <p class="add"><strong>What to add.</strong> Cycle count by category (feeds, meds, sundries). Variance IN/OUT with reason. Expired-batch write-off from near-expiry alerts.</p>
+    </div>
+
+    <div class="item">
+      <h3>10. Profit uses current cost, not the batch that was sold</h3>
+      <p class="ev">Area: Reports · Evidence: Profit-Loss.php JOIN inventory i ON i.id = s.product_id</p>
+      <p class="why"><strong>Why it hurts.</strong> P&amp;L COGS is inventory.cost_price × qty sold. After a price increase from a mill, old bags sold still cost the new price. Net profit is wrong for restocking decisions.</p>
+      <p class="add"><strong>What to add.</strong> Stamp unit cost on each sale/stock OUT from FIFO batch. P&amp;L from that cost. Show margin by category (feeds vs vet vs others).</p>
+    </div>
+
+    <div class="item">
+      <h3>11. Opening Payroll silently overwrites pay records</h3>
+      <p class="ev">Area: HR · Evidence: Admin/Payroll.php saveStmt on page load; late TIME(time_in) &gt;= 08:00:00</p>
+      <p class="why"><strong>Why it hurts.</strong> Every visit to Payroll.php upserts payroll_records. Peeking at a cutoff rewrites figures and feeds P&amp;L. Cash advances use SUM(amount) in the period, not remaining_balance, so the same utang can hit twice or skip leftovers. Late is hardcoded PHP 30 at 8:00 AM.</p>
+      <p class="add"><strong>What to add.</strong> Draft vs Approve payroll. Deduct from remaining_balance. Configurable late rules. OT, rest day, and holiday flags.</p>
+    </div>
+
+    <h2>P2 — Later</h2>
+
+    <div class="item">
+      <h3>12. No held cart, split tender, or supervisor PIN</h3>
+      <p class="ev">Area: Counter · Evidence: process_sale.php single payment_method; void is in-memory cart only</p>
+      <p class="why"><strong>Why it hurts.</strong> Peak hours: a customer leaves to get cash, another wants part GCash part cash, a cashier needs a manager for a price override. Today the cart is lost on refresh and only one payment method is allowed.</p>
+      <p class="add"><strong>What to add.</strong> Park/recall sale. Split payments. Manager PIN for manual discount and below-cost sell.</p>
+    </div>
+
+    <div class="item">
+      <h3>13. Low-stock alert is one number for every SKU</h3>
+      <p class="ev">Area: Stock · Evidence: Dashboard-Admin.php stock_quantity &lt; 10</p>
+      <p class="why"><strong>Why it hurts.</strong> A sack of rice and a 10 ml vial should not share threshold 10. Conversion rules have per-product thresholds; the dashboard does not. Reorder from mill/vet distributor is still mental.</p>
+      <p class="add"><strong>What to add.</strong> Per-SKU reorder point and preferred supplier. Suggest PO from items below point plus fast movers (dashboard already has 7-day top products).</p>
+    </div>
+
+    <div class="item">
+      <h3>14. XAMPP outage and no in-app backup</h3>
+      <p class="ev">Area: Reports · Evidence: Local agrivet_db; DATABASE_RECOVERY_XAMPP.md is manual only</p>
+      <p class="why"><strong>Why it hurts.</strong> Power cuts and MySQL crashes wipe a day’s work if there is no dump. POS is online-only to local PHP. A cashier cannot sell if Apache is down.</p>
+      <p class="add"><strong>What to add.</strong> Scheduled SQL dump from System Settings, restore runbook, and a simple offline queue later. Daily close that saves a Z-report PDF.</p>
+    </div>
+
+    <h2>Recommended build order</h2>
+    <div class="cols">
+      <div>
+        <h3>Week 1–2</h3>
+        <ul>
+          <li>Tender-aware shift totals and cash-in/out</li>
+          <li>Receipt by sale_reference</li>
+          <li>Return with stock restore</li>
+          <li>Receive PO into inventory (SKU, qty, cost, expiry)</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Week 3–4</h3>
+        <ul>
+          <li>Layaway money on the shift</li>
+          <li>Customer on the sale</li>
+          <li>Draft / approve payroll</li>
+          <li>Physical count + expiry write-off</li>
+          <li>Then credit accounts if farmers still buy on utang</li>
+        </ul>
+      </div>
+    </div>
+
+    <p style="margin-top:18px">Highest return first: <strong>cash tender on the shift</strong> plus <strong>receipt by sale reference</strong>.</p>
+
+    <footer>
+      Grounded in New_Demonteverde schema and pages (sales line items, cashier_sessions, purchase_orders, layaways, payroll_records). Revisit after confirming whether this branch still takes farm credit on paper.
+    </footer>
+  </div>
+</body>
+</html>

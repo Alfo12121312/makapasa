@@ -1,13 +1,11 @@
 /*
  * File: script.js
  * Purpose: Client-side UI helpers for POS and admin interfaces.
- * - Handles cart manipulation, discounts, UI modals, filtering, and inventory snapshot sync.
- * Known issues / improvements (locations):
- * - Large monolithic file; split POS logic, utilities, and DOM rendering for maintainability.
- * - Some global variables may cause collisions; inspect `let cart = []` at line 70 and globals near lines 1-90.
- * - Discount option loading and state live in `window.cashierSelectableDiscounts` around lines 81-82 and network loading at lines 445,452-458.
- * - Network/error handling and user feedback are minimal; see `confirmTransaction()` and fetch handling around lines 520-580.
+ * Sections: shared page helpers, POS cart/discount/payment logic, filtering,
+ * page setup, and shared app-page components.
  */
+
+/* ---------- Shared page helpers ---------- */
 function togglePassword(button) {
     const toggleButton = button || document.querySelector('.field-toggle-btn');
     if (!toggleButton) return;
@@ -91,12 +89,19 @@ function updateTransferButtonLabel() {
     }
 }
 
+/* ---------- POS state and discount calculations ---------- */
+// Money formatting for the POS screen: 12,345.60
+function posMoney(value) {
+    return (Number(value) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 let cart = [];
 let total = 0;
 let subtotal = 0;
 let saleType = 'Retail';
 let selectedDiscountId = 0;
 let selectedDiscountRule = null;
+let discountOptionsSignature = null;
 
 function getSelectedDiscountRule() {
     const selectedRadio = document.querySelector('input[name="selected_discount"]:checked');
@@ -105,6 +110,54 @@ function getSelectedDiscountRule() {
     if (!Array.isArray(window.cashierSelectableDiscounts)) return null;
     const rule = window.cashierSelectableDiscounts.find(d => Number(d.id) === Number(discountId));
     return rule || null;
+}
+
+/* Order-wide FIXED discount: api/process_sale.php splits the amount across the lines in proportion to each
+   line's subtotal, rounds every share to cents (any leftover cent goes to the biggest line) and then turns the
+   share into a per-unit discount rounded to cents. This does exactly the same, so the total on screen is the
+   total the server records (otherwise "Exact" cash could come up a centavo short and the sale be refused). */
+function fixedOrderPerUnit(rule, item) {
+    const idx = cart.indexOf(item);
+    if (idx === -1) return 0;
+    const fixed = Number(rule.discount_value) || 0;
+    const subs = cart.map(ci => Number(ci.price || 0) * Number(ci.quantity || 0));
+    const orderSubtotal = subs.reduce((sum, v) => sum + v, 0);
+    const totalQty = cart.reduce((sum, ci) => sum + Number(ci.quantity || 0), 0);
+
+    const shares = subs.map((sub, i) => {
+        let exact = orderSubtotal > 0
+            ? fixed * (sub / orderSubtotal)
+            : (totalQty > 0 ? fixed / totalQty : 0) * Number(cart[i].quantity || 0);
+        if (exact > sub) exact = sub;
+        return roundMoney(exact);
+    });
+    const remainder = roundMoney(fixed - roundMoney(shares.reduce((sum, v) => sum + v, 0)));
+    if (Math.abs(remainder) >= 0.01) {
+        let maxIdx = -1;
+        let maxSub = -1;
+        subs.forEach((sub, i) => { if (sub > maxSub) { maxSub = sub; maxIdx = i; } });
+        if (maxIdx !== -1) shares[maxIdx] = roundMoney(shares[maxIdx] + remainder);
+    }
+
+    const qty = Math.max(0.001, Number(item.quantity) || 1);
+    return Math.min(Number(item.price) || 0, roundMoney(shares[idx] / qty));
+}
+
+/* Tells the cashier why a chosen discount is not taking anything off yet (minimum quantity not reached,
+   or the product-specific promo's product is not in the order). Empty string when nothing to explain. */
+function discountHintText() {
+    const rule = selectedDiscountRule;
+    if (!rule || cart.length === 0) return '';
+    const minQty = Number(rule.min_qty || 1);
+    if (rule.scope === 'product') {
+        const line = cart.find(ci => Number(ci.id) === Number(rule.product_id));
+        if (!line) return `${rule.name} only applies to one specific product, which is not in this order.`;
+        const missing = minQty - Number(line.quantity || 0);
+        return missing > 0 ? `${rule.name}: add ${formatQty(Math.ceil(missing * 100) / 100)} more of ${line.name} to qualify (minimum ${minQty}).` : '';
+    }
+    const totalQty = cart.reduce((sum, ci) => sum + Number(ci.quantity || 0), 0);
+    const missing = minQty - totalQty;
+    return missing > 0 ? `${rule.name}: add ${formatQty(Math.ceil(missing * 100) / 100)} more item(s) to qualify (minimum ${minQty} items).` : '';
 }
 
 function getAutomaticDiscount(item) {
@@ -127,20 +180,11 @@ function getAutomaticDiscount(item) {
         let discount = 0;
         if (rule.discount_type === 'percentage') {
             discount = item.price * (value / 100);
+        } else if ((rule.scope || 'order') === 'order') {
+            // Fixed amount on the whole order: same cent-exact split the server uses.
+            discount = fixedOrderPerUnit(rule, item);
         } else {
-            // Fixed amount: if rule applies to whole order, distribute proportionally by item subtotal
-            if ((rule.scope || 'order') === 'order') {
-                const orderSubtotal = cart.reduce((s, ci) => s + (Number(ci.price || 0) * Number(ci.quantity || 0)), 0) || 0;
-                if (orderSubtotal > 0) {
-                    // per-unit share = D * (item.price * item.quantity / orderSubtotal) / item.quantity
-                    discount = value * ((item.price * (item.quantity || 1)) / orderSubtotal) / (item.quantity || 1);
-                } else {
-                    const totalQty = cart.reduce((sum, cartItem) => sum + Number(cartItem.quantity || 0), 0) || 1;
-                    discount = value / totalQty;
-                }
-            } else {
-                discount = value; // product-scoped fixed amount per-unit
-            }
+            discount = value; // product-scoped fixed amount per-unit
         }
         return Math.min(item.price, discount);
     }
@@ -149,7 +193,9 @@ function getAutomaticDiscount(item) {
         return 0;
     }
 
-    return item.price * 0.20;
+    // Same rate the server applies in api/process_sale.php (Settings > wholesale discount).
+    const wholesaleRate = Math.max(0, Math.min(100, Number(window.wholesalePercent ?? 10))) / 100;
+    return item.price * wholesaleRate;
 }
 
 function getAutomaticDiscountInfo(item) {
@@ -191,22 +237,123 @@ function getAutomaticDiscountInfo(item) {
     return { value: automatic, label };
 }
 
+/* ---------- Quantity, stock, and cart operations ---------- */
+/* Kg items can be sold in fractions (1/2 kg, or "PHP 200 worth"). Everything else stays whole. */
+function isWeighedUnit(unit) {
+    return ['kg', 'kgs', 'kls', 'kilo', 'kilos', 'kilogram', 'kilograms'].indexOf(String(unit || '').toLowerCase().replace(/[\s.]+/g, '')) !== -1;
+}
+
+function roundMoney(value) {
+    // +1e-9 so values like 18.675 (stored as 18.67499999...) round up to 18.68, matching PHP round().
+    return Math.round((Number(value) + 1e-9) * 100) / 100;
+}
+
+function roundKg(value) {
+    return Math.round(Number(value) * 100) / 100;
+}
+
+function getProductStock(id, fallback) {
+    const productCard = document.querySelector('.pos-item[data-product-id="' + id + '"]');
+    const stock = productCard ? parseFloat(productCard.getAttribute('data-stock')) : NaN;
+    return Number.isFinite(stock) ? stock : fallback;
+}
+
+function formatQty(value) {
+    return String(Number(Number(value).toFixed(3)));
+}
+
+/* "PHP amount" sales for kg items: the cashier can type the peso amount in the line total box and the
+   kilos are worked out as amount / price per kg (e.g. 20 / 36 = 0.556 kg). The typed amount is kept on
+   the line (item.amount) so the line still totals exactly what was typed, not 0.556 x 36 = 20.016.
+   api/process_sale.php applies the very same rule, so the screen and the recorded sale always agree. */
+function roundKg3(value) {
+    return Math.round((Number(value) + 1e-9) * 1000) / 1000;
+}
+
+// The typed peso amount for this line, or null when the line is an ordinary quantity line
+// (the amount is ignored as soon as the quantity no longer matches amount / price).
+function lineAmount(item) {
+    if (item.amount === undefined || item.amount === null) return null;
+    if (!isWeighedUnit(item.unit) || !(Number(item.price) > 0)) return null;
+    const amount = Number(item.amount);
+    if (!(amount > 0)) return null;
+    return Math.abs(roundKg3(amount / item.price) - Number(item.quantity)) < 0.0005 ? amount : null;
+}
+
+function lineSubtotal(item) {
+    const amount = lineAmount(item);
+    return amount !== null ? roundMoney(amount) : roundMoney(item.quantity * item.price);
+}
+
+function lineTotalAfterDiscount(item, discountPerUnit) {
+    const amount = lineAmount(item);
+    if (amount !== null) {
+        return Math.max(0, roundMoney(amount * (item.price - discountPerUnit) / item.price));
+    }
+    return Math.max(0, roundMoney(item.quantity * (item.price - discountPerUnit)));
+}
+
+/* ---------- Cart rendering and line controls ---------- */
+function setCartAmount(index, value) {
+    const item = cart[index];
+    if (!item) return;
+    if (!isWeighedUnit(item.unit) || !(Number(item.price) > 0)) {
+        updateCart();
+        return;
+    }
+
+    const amount = roundMoney(parseFloat(String(value).replace(/[^0-9.]/g, '')));
+    if (!Number.isFinite(amount) || amount <= 0) {
+        setPosFeedback('Enter an amount greater than 0.', 'error');
+        updateCart();   // put the previous total back in the box
+        return;
+    }
+
+    let quantity = roundKg3(amount / item.price);
+    if (quantity < 0.001) {
+        setPosFeedback('That amount is too small to weigh out.', 'error');
+        updateCart();
+        return;
+    }
+
+    const stock = getProductStock(item.id, 9999);
+    if (quantity > stock + 0.0001) {
+        quantity = Math.floor(stock * 1000) / 1000;
+        delete item.amount;   // capped by stock: price it as a normal quantity line
+        setPosFeedback(`Only ${formatQty(stock)} kg in stock (about PHP ${posMoney(roundMoney(quantity * item.price))}). Quantity set to ${formatQty(quantity)} kg.`, 'error');
+        if (quantity <= 0) {
+            removeFromCart(index);
+            return;
+        }
+    } else {
+        item.amount = amount;
+    }
+    item.quantity = quantity;
+
+    if (selectedDiscountId > 0) {
+        updateSelectedDiscount();
+    } else {
+        updateCart();
+    }
+}
+
 function addToCart(id, name, price, unit) {
-    const productCard = document.querySelector('.product-card[data-product-id="' + id + '"]');
-    const stock = productCard ? parseInt(productCard.getAttribute('data-stock') || '0', 10) : 0;
+    const stock = getProductStock(id, 0);
     const existing = cart.find(item => item.id === id && item.unit === unit);
     if (existing) {
-        if (existing.quantity >= stock) {
+        if (existing.quantity + 1 > stock + 0.0001) {
             setPosFeedback('Not enough stock available.', 'error');
             return;
         }
-        existing.quantity += 1;
+        delete existing.amount;
+        existing.quantity = isWeighedUnit(unit) ? roundKg(existing.quantity + 1) : existing.quantity + 1;
     } else {
         if (stock <= 0) {
             setPosFeedback('This item is out of stock.', 'error');
             return;
         }
-        cart.push({ id, name, price: Number(price), unit, quantity: 1, manual_discount: 0 });
+        const startQty = isWeighedUnit(unit) ? Math.min(1, roundKg(stock)) : 1;
+        cart.push({ id, name, price: Number(price), unit, quantity: startQty, manual_discount: 0 });
     }
 
     if (selectedDiscountId > 0) {
@@ -216,28 +363,23 @@ function addToCart(id, name, price, unit) {
     }
 }
 
-function updateDiscount(index, discountValue) {
-    if (!cart[index]) return;
-    cart[index].manual_discount = Math.max(0, parseFloat(discountValue) || 0);
-    updateCart();
-}
-
 function setCartQuantity(index, value) {
     if (!cart[index]) return;
-    let newQuantity = Math.floor(Number(value));
+    const weighed = isWeighedUnit(cart[index].unit);
+    let newQuantity = weighed ? roundKg(value) : Math.floor(Number(value));
 
     if (!Number.isFinite(newQuantity) || newQuantity <= 0) {
         removeFromCart(index);
         return;
     }
 
-    const productCard = document.querySelector('.product-card[data-product-id="' + cart[index].id + '"]');
-    const stock = productCard ? parseInt(productCard.getAttribute('data-stock') || '9999', 10) : 9999;
+    const stock = getProductStock(cart[index].id, 9999);
     if (newQuantity > stock) {
-        setPosFeedback(`Only ${stock} in stock. Quantity set to ${stock}.`, 'error');
-        newQuantity = stock;
+        newQuantity = weighed ? Math.floor(stock * 100) / 100 : Math.floor(stock);
+        setPosFeedback(`Only ${formatQty(stock)} in stock. Quantity set to ${formatQty(newQuantity)}.`, 'error');
     }
 
+    delete cart[index].amount;
     cart[index].quantity = newQuantity;
 
     if (selectedDiscountId > 0) {
@@ -266,7 +408,7 @@ function updateCart() {
     if (emptyState) emptyState.style.display = cart.length === 0 ? 'flex' : 'none';
     cartItems.style.display = cart.length === 0 ? 'none' : 'flex';
     if (countBadge) {
-        const totalItems = cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+        const totalItems = Math.ceil(cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0));
         countBadge.textContent = totalItems === 1 ? '1 item' : `${totalItems} items`;
     }
 
@@ -275,41 +417,81 @@ function updateCart() {
         const autoDiscount = autoInfo.value;
         const manualDiscount = window.cashierCanApplyDiscounts ? Math.min(item.price, Number(item.manual_discount) || 0) : 0;
         const itemDiscount = Math.max(autoDiscount, manualDiscount);
-        const itemSubtotal = item.quantity * item.price;
-        const itemDiscountTotal = item.quantity * itemDiscount;
-        const itemTotal = Math.max(0, itemSubtotal - itemDiscountTotal);
+        // Round each line to cents exactly like api/process_sale.php, so on-screen total = recorded total.
+        const itemSubtotal = lineSubtotal(item);
+        const itemTotal = lineTotalAfterDiscount(item, itemDiscount);
+        const itemDiscountTotal = roundMoney(itemSubtotal - itemTotal);
 
         subtotal += itemSubtotal;
         total += itemTotal;
         totalDiscount += itemDiscountTotal;
 
-        const cartItem = document.createElement('div');
-        cartItem.className = 'cart-item' + (itemDiscount > 0 ? ' has-discount' : '');
+        const hasDiscount = itemDiscountTotal > 0;
+        const promoLabel = manualDiscount > autoDiscount ? 'Manual discount' : autoInfo.label;
 
-        const itemInfo = document.createElement('div');
-        itemInfo.className = 'item-info';
+        const cartItem = document.createElement('div');
+        cartItem.className = 'pos-line' + (hasDiscount ? ' has-discount' : '');
+
+        const main = document.createElement('div');
+        main.className = 'pos-line-main';
 
         const itemName = document.createElement('span');
-        itemName.className = 'item-name';
+        itemName.className = 'pos-line-name';
         itemName.textContent = item.name;
 
+        let lineTotal;
+        if (isWeighedUnit(item.unit) && item.price > 0) {
+            // Kg items: type the peso amount and the kilos adjust (amount / price per kg).
+            lineTotal = document.createElement('input');
+            lineTotal.type = 'text';
+            lineTotal.className = 'pos-line-total pos-line-total-input';
+            lineTotal.inputMode = 'decimal';
+            lineTotal.autocomplete = 'off';
+            lineTotal.value = posMoney(itemTotal);
+            lineTotal.title = 'Type an amount in PHP to set the kilos';
+            lineTotal.setAttribute('aria-label', 'Amount in PHP for ' + item.name + ' (changes the kilos)');
+            lineTotal.addEventListener('focus', event => event.target.select());
+            lineTotal.addEventListener('change', event => setCartAmount(index, event.target.value));
+            lineTotal.addEventListener('keydown', event => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    event.target.blur();
+                } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.target.value = posMoney(itemTotal);
+                    event.target.blur();
+                }
+            });
+        } else {
+            lineTotal = document.createElement('span');
+            lineTotal.className = 'pos-line-total';
+            lineTotal.textContent = posMoney(itemTotal);
+        }
+
+        main.appendChild(itemName);
+        main.appendChild(lineTotal);
+
+        const sub = document.createElement('div');
+        sub.className = 'pos-line-sub';
+
         const qtyControls = document.createElement('span');
-        qtyControls.className = 'qty-controls';
+        qtyControls.className = 'pos-qty';
 
         const decrementButton = document.createElement('button');
         decrementButton.type = 'button';
-        decrementButton.className = 'btn-qty';
-        decrementButton.setAttribute('aria-label', 'Decrease quantity');
-        decrementButton.textContent = '−';
+        decrementButton.className = 'pos-qty-btn';
+        decrementButton.setAttribute('aria-label', 'Decrease quantity of ' + item.name);
+        decrementButton.textContent = '\u2212';
         decrementButton.addEventListener('click', () => changeCartQuantity(index, -1));
 
         const quantityInput = document.createElement('input');
         quantityInput.type = 'number';
-        quantityInput.className = 'item-qty-input';
-        quantityInput.min = '1';
-        quantityInput.step = '1';
-        quantityInput.inputMode = 'numeric';
-        quantityInput.value = item.quantity;
+        quantityInput.className = 'pos-qty-input';
+        const weighedLine = isWeighedUnit(item.unit);
+        quantityInput.min = weighedLine ? '0.01' : '1';
+        quantityInput.step = weighedLine ? '0.01' : '1';
+        quantityInput.inputMode = weighedLine ? 'decimal' : 'numeric';
+        quantityInput.value = formatQty(item.quantity);
         quantityInput.setAttribute('aria-label', 'Quantity for ' + item.name);
         quantityInput.addEventListener('focus', event => event.target.select());
         quantityInput.addEventListener('change', event => setCartQuantity(index, event.target.value));
@@ -322,8 +504,8 @@ function updateCart() {
 
         const incrementButton = document.createElement('button');
         incrementButton.type = 'button';
-        incrementButton.className = 'btn-qty';
-        incrementButton.setAttribute('aria-label', 'Increase quantity');
+        incrementButton.className = 'pos-qty-btn';
+        incrementButton.setAttribute('aria-label', 'Increase quantity of ' + item.name);
         incrementButton.textContent = '+';
         incrementButton.addEventListener('click', () => changeCartQuantity(index, 1));
 
@@ -331,53 +513,59 @@ function updateCart() {
         qtyControls.appendChild(quantityInput);
         qtyControls.appendChild(incrementButton);
 
-        itemInfo.appendChild(itemName);
-        itemInfo.appendChild(qtyControls);
+        const unitPrice = document.createElement('span');
+        unitPrice.className = 'pos-line-unit';
+        unitPrice.textContent = '\u00d7 ' + posMoney(item.price) + (item.unit ? ' / ' + (isWeighedUnit(item.unit) ? 'kg' : item.unit) : '');
 
-        const itemPrices = document.createElement('div');
-        itemPrices.className = 'item-prices';
-        itemPrices.innerHTML = `
-            <div class="item-price-row"><span>Unit: PHP ${item.price.toFixed(2)}</span></div>
-            <div class="item-price-row"><span>Total: PHP ${itemTotal.toFixed(2)}</span></div>
-            <div class="item-discount"><span>Discount: -PHP ${itemDiscountTotal.toFixed(2)}</span></div>
-            <div class="small-text"><span>Promo: ${manualDiscount > autoDiscount ? 'Manual discount' : autoInfo.label}</span></div>
-        `;
-
-        cartItem.appendChild(itemInfo);
-        cartItem.appendChild(itemPrices);
-
-        if (window.cashierCanApplyDiscounts) {
-            const discountInput = document.createElement('input');
-            discountInput.type = 'number';
-            discountInput.step = '0.01';
-            discountInput.min = '0';
-            discountInput.max = item.price.toFixed(2);
-            discountInput.value = manualDiscount.toFixed(2);
-            discountInput.placeholder = 'Manual discount';
-            discountInput.addEventListener('change', event => updateDiscount(index, event.target.value));
-            cartItem.appendChild(discountInput);
-        }
-
-        const cartItemControls = document.createElement('div');
-        cartItemControls.className = 'cart-item-controls';
         const removeButton = document.createElement('button');
         removeButton.type = 'button';
-        removeButton.className = 'btn-remove';
-        removeButton.textContent = 'Remove';
+        removeButton.className = 'pos-line-remove';
+        removeButton.setAttribute('aria-label', 'Remove ' + item.name);
+        removeButton.title = 'Remove';
+        removeButton.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
         removeButton.addEventListener('click', () => removeFromCart(index));
-        cartItemControls.appendChild(removeButton);
-        cartItem.appendChild(cartItemControls);
+
+        sub.appendChild(qtyControls);
+        sub.appendChild(unitPrice);
+        sub.appendChild(removeButton);
+
+        cartItem.appendChild(main);
+        cartItem.appendChild(sub);
+
+        if (hasDiscount) {
+            const promo = document.createElement('div');
+            promo.className = 'pos-line-promo';
+            const promoName = document.createElement('span');
+            promoName.textContent = promoLabel;
+            const promoAmount = document.createElement('span');
+            promoAmount.textContent = '\u2212' + posMoney(itemDiscountTotal);
+            promo.appendChild(promoName);
+            promo.appendChild(promoAmount);
+            cartItem.appendChild(promo);
+        }
 
         cartItems.appendChild(cartItem);
     });
 
-    if (subtotalEl) subtotalEl.textContent = `PHP ${subtotal.toFixed(2)}`;
-    if (totalDiscountEl) totalDiscountEl.textContent = `PHP ${totalDiscount.toFixed(2)}`;
-    cartTotal.textContent = `PHP ${total.toFixed(2)}`;
+    if (subtotalEl) subtotalEl.textContent = `PHP ${posMoney(subtotal)}`;
+    if (totalDiscountEl) totalDiscountEl.textContent = `PHP ${posMoney(totalDiscount)}`;
+    cartTotal.textContent = `PHP ${posMoney(total)}`;
     if (proceedBtn) proceedBtn.disabled = cart.length === 0 || !window.sessionOpen;
+    const voidBtn = document.getElementById('void-btn');
+    if (voidBtn) voidBtn.disabled = cart.length === 0;
+    const paneCount = document.getElementById('pos-pane-count');
+    if (paneCount) paneCount.textContent = Math.ceil(cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0));
+    if (typeof window.posAfterCartRender === 'function') window.posAfterCartRender();
 
     const discountRow = document.getElementById('discount-row');
     if (discountRow) discountRow.classList.toggle('is-active', totalDiscount > 0);
+
+    const hintEl = document.getElementById('discount-hint');
+    if (hintEl) {
+        const hint = discountHintText();
+        hintEl.textContent = hint;
+        hintEl.hidden = hint === '';
+    }
 }
 
 function removeFromCart(index) {
@@ -387,16 +575,18 @@ function removeFromCart(index) {
 
 function changeCartQuantity(index, delta) {
     if (!cart[index]) return;
-    const newQuantity = cart[index].quantity + delta;
+    const weighed = isWeighedUnit(cart[index].unit);
+    const step = weighed ? 0.5 : 1;   // kg items go up/down by 1/2 kg
+    const newQuantity = weighed ? roundKg(cart[index].quantity + delta * step) : cart[index].quantity + delta;
     if (newQuantity <= 0) {
         cart.splice(index, 1);
     } else {
-        const productCard = document.querySelector('.product-card[data-product-id="' + cart[index].id + '"]');
-        const stock = productCard ? parseInt(productCard.getAttribute('data-stock') || '9999', 10) : 9999;
-        if (newQuantity > stock) {
+        const stock = getProductStock(cart[index].id, 9999);
+        if (newQuantity > stock + 0.0001) {
             setPosFeedback('Not enough stock available.', 'error');
             return;
         }
+        delete cart[index].amount;
         cart[index].quantity = newQuantity;
     }
     if (selectedDiscountId > 0) {
@@ -406,15 +596,11 @@ function changeCartQuantity(index, delta) {
     }
 }
 
-function showCategory(category) {
-    const cards = document.querySelectorAll('.product-card');
-    cards.forEach(card => {
-        const cardCategory = card.getAttribute('data-category') || '';
-        card.style.display = category === cardCategory ? 'block' : 'none';
-    });
-
-    document.querySelectorAll('.tab-button').forEach(tab => {
-        tab.classList.toggle('active', tab.textContent.trim() === category);
+function showUnitFilter(unit) {
+    document.querySelectorAll('.unit-tab-button').forEach(tab => {
+        const active = tab.getAttribute('data-unit-filter') === unit;
+        tab.classList.toggle('active', active);
+        tab.setAttribute('aria-pressed', String(active));
     });
 
     filterPosProducts();
@@ -426,9 +612,16 @@ function updateSaleType() {
     updateCart();
 }
 
+/* ---------- Discount selection and refresh ---------- */
 function renderDiscountOptions(discounts) {
     const container = document.getElementById('discount-options-container');
     if (!container) return;
+
+    container.onchange = event => {
+        if (event.target.matches('input[name="selected_discount"]')) {
+            updateSelectedDiscount();
+        }
+    };
 
     const list = Array.isArray(discounts) ? discounts : [];
     const currentSelection = document.querySelector('input[name="selected_discount"]:checked');
@@ -437,38 +630,50 @@ function renderDiscountOptions(discounts) {
     container.innerHTML = '';
 
     const noDiscount = document.createElement('label');
-    noDiscount.className = 'segment-option';
-    noDiscount.innerHTML = '<input type="radio" name="selected_discount" value="" checked onchange="updateSelectedDiscount()"><span>No Discount</span>';
+    noDiscount.className = 'pos-chip-opt';
+    const noDiscountRadio = document.createElement('input');
+    noDiscountRadio.type = 'radio';
+    noDiscountRadio.name = 'selected_discount';
+    noDiscountRadio.value = '';
+    noDiscountRadio.checked = currentValue === '';
+    const noDiscountLabel = document.createElement('span');
+    noDiscountLabel.textContent = 'None';
+    noDiscount.appendChild(noDiscountRadio);
+    noDiscount.appendChild(noDiscountLabel);
     container.appendChild(noDiscount);
 
     if (list.length === 0) {
         const empty = document.createElement('p');
-        empty.className = 'small-text';
-        empty.textContent = 'No cashier-selectable promotions right now. Order-wide promos and wholesale pricing still apply automatically.';
+        empty.className = 'pos-chips-empty';
+        empty.textContent = 'No selectable discounts.';
         container.appendChild(empty);
         return;
     }
 
     list.forEach(discount => {
         const label = document.createElement('label');
-        label.className = 'segment-option';
+        label.className = 'pos-chip-opt';
 
         const radio = document.createElement('input');
         radio.type = 'radio';
         radio.name = 'selected_discount';
         radio.value = String(discount.id);
         radio.checked = String(discount.id) === String(currentValue);
-        radio.onchange = updateSelectedDiscount;
 
         const span = document.createElement('span');
         const detailText = discount.discount_type === 'percentage'
-            ? `${Number(discount.discount_value).toFixed(2)}% off`
+            ? `${Number(discount.discount_value)}% off`
             : `PHP ${Number(discount.discount_value).toFixed(2)} off`;
 
         const scopeText = (discount.scope || 'order') === 'product' ? 'product only' : 'order-wide';
         const minQty = Number(discount.min_qty || 1);
-        const minText = minQty > 1 ? ` &middot; min ${minQty} items` : '';
-        span.innerHTML = `${discount.name}<em>${detailText} &middot; ${scopeText}${minText}</em>`;
+        const minText = minQty > 1 ? ` \u00b7 min ${minQty}` : '';
+        const nameEl = document.createElement('b');
+        nameEl.textContent = discount.name;
+        const detailEl = document.createElement('em');
+        detailEl.textContent = `${detailText} \u00b7 ${scopeText}${minText}`;
+        span.appendChild(nameEl);
+        span.appendChild(detailEl);
 
         label.appendChild(radio);
         label.appendChild(span);
@@ -488,15 +693,33 @@ function loadDiscountOptions() {
     }
 
     fetch(window.discountOptionsUrl, { credentials: 'same-origin' })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) throw new Error(`Discount options request failed (${response.status}).`);
+            return response.json();
+        })
         .then(data => {
             const discounts = data && Array.isArray(data.discounts) ? data.discounts : (window.cashierSelectableDiscounts || []);
+            const signature = JSON.stringify(discounts);
+            const container = document.getElementById('discount-options-container');
+            const optionsRendered = container && container.querySelector('input[name="selected_discount"]');
+            if (signature === discountOptionsSignature && optionsRendered) return;
+            // Never rebuild the cart while the cashier is typing in a quantity box (it would save a half-typed value like 0.6).
+            const typing = document.activeElement && document.activeElement.classList
+                && (document.activeElement.classList.contains('pos-qty-input') || document.activeElement.classList.contains('pos-line-total-input'));
+            if (typing) return;
             window.cashierSelectableDiscounts = discounts;
+            discountOptionsSignature = signature;
             renderDiscountOptions(discounts);
             updateSelectedDiscount();
         })
-        .catch(() => {
-            renderDiscountOptions(window.cashierSelectableDiscounts || []);
+        .catch(error => {
+            console.error('Unable to refresh cashier discount options.', error);
+            const discounts = window.cashierSelectableDiscounts || [];
+            const container = document.getElementById('discount-options-container');
+            if (!container || !container.querySelector('input[name="selected_discount"]')) {
+                renderDiscountOptions(discounts);
+                updateSelectedDiscount();
+            }
         });
 }
 
@@ -528,18 +751,64 @@ function cancelOrder() {
     updateCart();
 }
 
+/* ---------- Payment and transaction flow ---------- */
+// Mode of payment chosen in the Pay pop-up (Cash, GCash, Maya, Card, Bank Transfer).
+let paymentMethod = 'Cash';
+
+function setPaymentMethod(method) {
+    paymentMethod = method || 'Cash';
+    const isCash = paymentMethod === 'Cash';
+    const cashFields = document.getElementById('cash-fields');
+    const nonCashFields = document.getElementById('noncash-fields');
+    const kicker = document.getElementById('pay-kicker');
+    const confirmBtn = document.querySelector('.pos-confirm-sale');
+    const amountReceived = document.getElementById('amount-received');
+    const reference = document.getElementById('payment-reference');
+    if (cashFields) cashFields.hidden = !isCash;
+    if (nonCashFields) nonCashFields.hidden = isCash;
+    if (kicker) kicker.textContent = isCash ? 'Cash payment' : `${paymentMethod} payment`;
+    if (isCash) {
+        if (amountReceived) { amountReceived.focus(); }
+        calculateChange();
+    } else {
+        // Cashless = exact amount, nothing to count or give back.
+        if (amountReceived) amountReceived.value = total.toFixed(2);
+        if (confirmBtn) confirmBtn.disabled = false;
+        if (reference) reference.focus();
+    }
+}
+
+function resetPaymentMethod() {
+    const cashRadio = document.querySelector('input[name="payment_method"][value="Cash"]');
+    if (cashRadio) cashRadio.checked = true;
+    const reference = document.getElementById('payment-reference');
+    if (reference) reference.value = '';
+    paymentMethod = 'Cash';
+    const cashFields = document.getElementById('cash-fields');
+    const nonCashFields = document.getElementById('noncash-fields');
+    const kicker = document.getElementById('pay-kicker');
+    if (cashFields) cashFields.hidden = false;
+    if (nonCashFields) nonCashFields.hidden = true;
+    if (kicker) kicker.textContent = 'Cash payment';
+}
+
 function proceedOrder() {
     if (cart.length === 0) return;
     const totalEl = document.getElementById('trans-total');
     const amountReceived = document.getElementById('amount-received');
     const changeAmount = document.getElementById('change-amount');
-    const confirmBtn = document.querySelector('.btn-confirm-trans');
+    const confirmBtn = document.querySelector('.pos-confirm-sale');
     const modal = document.getElementById('transaction-modal');
-    if (totalEl) totalEl.textContent = `PHP ${total.toFixed(2)}`;
+    if (totalEl) totalEl.textContent = `PHP ${posMoney(total)}`;
     if (amountReceived) amountReceived.value = '';
-    if (changeAmount) { changeAmount.textContent = 'PHP 0.00'; changeAmount.style.color = ''; }
-    if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.style.opacity = '0.5'; confirmBtn.style.cursor = 'not-allowed'; }
-    if (modal) modal.style.display = 'block';
+    if (changeAmount) { changeAmount.textContent = 'PHP 0.00'; }
+    if (confirmBtn) confirmBtn.disabled = true;
+    const changeBox = changeAmount ? changeAmount.parentElement : null;
+    if (changeBox) changeBox.classList.remove('is-short', 'is-ok');
+    const changeLabel = document.getElementById('change-label');
+    if (changeLabel) changeLabel.textContent = 'Change';
+    resetPaymentMethod();
+    if (modal) modal.style.display = 'flex';
     setTimeout(() => { if (amountReceived) amountReceived.focus(); }, 50);
 }
 
@@ -553,46 +822,54 @@ function closeTransactionModal() {
 function calculateChange() {
     const amountReceived = document.getElementById('amount-received');
     const changeAmount = document.getElementById('change-amount');
-    const confirmBtn = document.querySelector('.btn-confirm-trans');
+    const confirmBtn = document.querySelector('.pos-confirm-sale');
     if (!amountReceived || !changeAmount) return;
+    if (paymentMethod !== 'Cash') return; // cashless payments are always exact
     const received = parseFloat(amountReceived.value) || 0;
-    const change = received - total;
-    changeAmount.textContent = `PHP ${change.toFixed(2)}`;
-    if (confirmBtn) {
-        confirmBtn.disabled = change < 0;
-        confirmBtn.style.opacity = change < 0 ? '0.5' : '';
-        confirmBtn.style.cursor = change < 0 ? 'not-allowed' : '';
+    // Work in centavos so 0.1 + 0.2 style float noise never blocks an exact payment.
+    const changeCents = Math.round(received * 100) - Math.round(total * 100);
+    const change = changeCents / 100;
+    const short = changeCents < 0;
+    const label = document.getElementById('change-label');
+    if (label) label.textContent = short ? 'Still owed' : 'Change';
+    changeAmount.textContent = `PHP ${posMoney(Math.abs(change))}`;
+    const box = changeAmount.parentElement;
+    if (box) {
+        box.classList.toggle('is-short', short && received > 0);
+        box.classList.toggle('is-ok', !short && received > 0);
     }
-    if (changeAmount) {
-        changeAmount.style.color = change < 0 ? '#c0392b' : '';
-    }
+    if (confirmBtn) confirmBtn.disabled = short;
 }
 
+/* ---------- Inventory snapshot and sale processing ---------- */
+let posFeedbackTimer = null;
 function setPosFeedback(message, type) {
     const feedback = document.getElementById('pos-feedback');
     if (!feedback) return;
-    feedback.className = `message ${type}`;
+    feedback.className = `pos-snack ${type || 'success'}`;
     feedback.textContent = message;
-    feedback.style.display = 'block';
+    feedback.hidden = false;
+    clearTimeout(posFeedbackTimer);
+    posFeedbackTimer = setTimeout(() => { feedback.hidden = true; }, type === 'error' ? 5000 : 3500);
 }
 
 function applyInventorySnapshot(items) {
     Object.entries(items || {}).forEach(([productId, data]) => {
-        const stock = Number(data.stock_quantity ?? data) || 0;
-        const productCard = document.querySelector(`.product-card[data-product-id="${productId}"]`);
+        const stock = Math.round((Number(data.stock_quantity ?? data) || 0) * 1000) / 1000;
+        const productCard = document.querySelector(`.pos-item[data-product-id="${productId}"]`);
         if (productCard) {
             productCard.setAttribute('data-stock', stock);
             const liveStock = productCard.querySelector('.live-stock');
-            if (liveStock) liveStock.textContent = stock;
-            const button = productCard.querySelector('button');
-            if (button) button.disabled = stock <= 0;
+            if (liveStock) liveStock.textContent = formatQty(stock);
+            productCard.disabled = stock <= 0;
             productCard.classList.toggle('out-of-stock', stock <= 0);
+            productCard.classList.toggle('is-low', stock > 0 && stock <= 5);
         }
 
         const row = document.querySelector(`#inventoryTable tbody tr[data-product-id="${productId}"]`);
         if (row) {
             const stockCell = row.querySelector('[data-stock-cell]');
-            if (stockCell) stockCell.textContent = stock;
+            if (stockCell) stockCell.textContent = formatQty(stock);
         }
     });
 }
@@ -609,54 +886,68 @@ function syncInventorySnapshot() {
         .catch(() => {});
 }
 
+let posSaleInFlight = false;
 function confirmTransaction() {
-    console.log("ConfirmTransaction triggered");
+    if (posSaleInFlight) return;
     if (!cart || cart.length === 0) {
-    alert("Cart is empty");
-    return;
-    }
-    const amountReceived = document.getElementById('amount-received');
-    const received = amountReceived ? parseFloat(amountReceived.value) || 0 : 0;
-    if (received < total) {
-        window.alert('Amount received is less than total.');
+        setPosFeedback('The order is empty.', 'error');
         return;
     }
+    const amountReceived = document.getElementById('amount-received');
+    const isCash = paymentMethod === 'Cash';
+    const received = isCash ? (amountReceived ? parseFloat(amountReceived.value) || 0 : 0) : total;
+    if (isCash && Math.round(received * 100) < Math.round(total * 100)) {
+        setPosFeedback('Amount received is less than the total.', 'error');
+        return;
+    }
+    const referenceInput = document.getElementById('payment-reference');
+    const paymentReference = (!isCash && referenceInput) ? referenceInput.value.trim() : '';
+    const salePaymentMethod = paymentMethod;
     if (!window.processSaleUrl) return;
 
     const selectedRadio = document.querySelector('input[name="selected_discount"]:checked');
     const selectedDiscountIdForRequest = selectedRadio ? parseInt(selectedRadio.value, 10) || 0 : 0;
-    const payloadCart = cart.map(item => ({
-        id: item.id,
-        quantity: item.quantity,
-        price: item.price,
-        unit: item.unit,
-        manual_discount: Number(item.manual_discount || 0)
-    }));
+    const payloadCart = cart.map(item => {
+        const row = {
+            id: item.id,
+            quantity: item.quantity,
+            price: item.price,
+            unit: item.unit,
+            manual_discount: Number(item.manual_discount || 0)
+        };
+        const typedAmount = lineAmount(item);
+        if (typedAmount !== null) row.amount = typedAmount;   // server recomputes kilos from this
+        return row;
+    });
+
+    const saleTotal = total;
+    const confirmBtn = document.querySelector('.pos-confirm-sale');
+    posSaleInFlight = true;
+    if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.classList.add('is-busy'); }
 
     fetch(window.processSaleUrl, {
         method: 'POST',
         credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.csrfToken || '' },
         body: JSON.stringify({
+            csrf_token: window.csrfToken || '',
             cart: payloadCart,
             sale_type: saleType,
             selected_discount_id: selectedDiscountIdForRequest,
             amount_received: received,
-            change_amount: received - total
+            change_amount: isCash ? received - saleTotal : 0,
+            payment_method: salePaymentMethod,
+            payment_reference: paymentReference
         })
     })
-        .then(async response => {
-            const data = await response.json();
-            console.log('RAW RESPONSE:', data);
-            return data;
-        })
+        .then(response => response.json())
         .then(data => {
             if (!data.success) {
                 setPosFeedback(data.message || 'Unable to process sale.', 'error');
+                if (confirmBtn) confirmBtn.disabled = false;
                 return;
             }
 
-            setPosFeedback(`${data.message} Reference: ${data.sale_reference}`, 'success');
             if (data.inventory) {
                 const normalized = {};
                 Object.entries(data.inventory).forEach(([key, value]) => {
@@ -666,20 +957,48 @@ function confirmTransaction() {
             }
             const shiftValue = document.getElementById('shift-sales-value');
             if (shiftValue && data.shift) {
-                shiftValue.textContent = `PHP ${Number(data.shift.total_sales).toFixed(2)}`;
+                const salesTotal = Number(data.shift.total_sales);
+                shiftValue.textContent = `PHP ${posMoney(salesTotal)}`;
+                const endShiftSales = document.getElementById('end-shift-sales');
+                if (endShiftSales) {
+                    endShiftSales.textContent = `PHP ${salesTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                }
+                const expectedCash = document.getElementById('expected-closing-cash');
+                if (expectedCash && Number.isFinite(Number(window.shiftExpectedBase))) {
+                    const expectedBase = Number(window.shiftExpectedBase) + salesTotal;
+                    expectedCash.dataset.base = expectedBase.toFixed(2);
+                    expectedCash.textContent = `PHP ${expectedBase.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                }
             }
             cancelOrder();
             closeTransactionModal();
             syncInventorySnapshot();
+
+            if (typeof showSaleDone === 'function') {
+                showSaleDone({ reference: data.sale_reference, total: saleTotal, received: received, method: data.payment_method || salePaymentMethod });
+            } else {
+                setPosFeedback(`${data.message} Reference: ${data.sale_reference} (${data.payment_method || salePaymentMethod})`, 'success');
+            }
         })
         .catch(() => {
-            setPosFeedback('Network error while processing the sale.', 'error');
+            setPosFeedback('Network error while processing the sale. Nothing was charged; try again.', 'error');
+            if (confirmBtn) confirmBtn.disabled = false;
+        })
+        .finally(() => {
+            posSaleInFlight = false;
+            if (confirmBtn) confirmBtn.classList.remove('is-busy');
         });
 }
 
+/* ---------- Shift controls and table filters ---------- */
 function openEndShiftModal() {
     const modal = document.getElementById('end-shift-modal');
-    if (modal) modal.style.display = 'block';
+    if (modal) {
+        modal.style.display = 'flex';
+        modal.setAttribute('aria-hidden', 'false');
+        const closingInput = document.getElementById('closing-cash');
+        if (closingInput) closingInput.focus();
+    }
 }
 
 if (document.readyState === 'loading') {
@@ -702,9 +1021,21 @@ if (document.readyState === 'loading') {
 
 function closeEndShiftModal() {
     const modal = document.getElementById('end-shift-modal');
-    if (modal) modal.style.display = 'none';
+    if (modal) {
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+        const trigger = document.getElementById('end-shift-trigger');
+        if (trigger) trigger.focus();
+    }
 }
 
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape' && document.getElementById('end-shift-modal')?.style.display === 'flex') {
+        closeEndShiftModal();
+    }
+});
+
+/* ---------- Table and inventory filtering ---------- */
 function searchTable(inputId, tableId) {
     const input = document.getElementById(inputId);
     const table = document.getElementById(tableId);
@@ -779,7 +1110,7 @@ function filterByStockStatus(statusFilterId, tableId) {
     if (!filter || !table) return;
     const quantityIndex = getColumnIndex(table, 'stock');
     Array.from(table.querySelectorAll('tbody tr')).forEach(row => {
-        const quantity = parseInt(row.cells[quantityIndex]?.textContent || '0', 10);
+        const quantity = parseFloat(row.cells[quantityIndex]?.textContent || '0') || 0;
         let show = true;
         if (filter.value === 'low') show = quantity < 10;
         if (filter.value === 'medium') show = quantity >= 10 && quantity < 50;
@@ -788,21 +1119,34 @@ function filterByStockStatus(statusFilterId, tableId) {
     });
 }
 
+/* ---------- POS product filtering ---------- */
 function filterPosProducts() {
     const input = document.getElementById('pos-search');
     if (!input) return;
     const term = input.value.trim().toLowerCase();
-    const activeTab = document.querySelector('.tab-button.active');
-    const activeCategory = activeTab ? activeTab.textContent.trim() : '';
-    document.querySelectorAll('.product-card').forEach(card => {
+    const activeTab = document.querySelector('.unit-tab-button.active');
+    const activeUnit = activeTab ? activeTab.getAttribute('data-unit-filter') : 'all';
+    const categorySelect = document.getElementById('pos-category');
+    const activeCategory = categorySelect ? categorySelect.value : '';
+    let visibleProducts = 0;
+    document.querySelectorAll('.pos-item').forEach(card => {
         const name = (card.getAttribute('data-name') || '').toLowerCase();
+        const code = (card.getAttribute('data-code') || '').toLowerCase();
+        const unit = card.getAttribute('data-unit-filter') || 'other';
         const category = card.getAttribute('data-category') || '';
+        const unitMatch = activeUnit === 'all' || unit === activeUnit;
         const categoryMatch = !activeCategory || category === activeCategory;
-        const textMatch = !term || name.includes(term);
-        card.style.display = categoryMatch && textMatch ? 'block' : 'none';
+        const textMatch = !term || name.includes(term) || code.includes(term);
+        const visible = unitMatch && categoryMatch && textMatch;
+        card.style.display = visible ? '' : 'none';
+        if (visible) visibleProducts++;
     });
+
+    const emptyState = document.getElementById('pos-no-results');
+    if (emptyState) emptyState.hidden = visibleProducts > 0;
 }
 
+/* ---------- Page setup ---------- */
 document.addEventListener('DOMContentLoaded', function() {
     const sidebar = document.querySelector('.sidebar');
     const menuToggle = document.querySelector('.menu-toggle');
@@ -927,3 +1271,82 @@ document.addEventListener('DOMContentLoaded', function () {
     initRowMenus();
     initToolbarSearch();
 });
+
+/* ---------- Top navigation (dropdowns, user menu, mobile menu, clock) ---------- */
+(function () {
+    function closeAll(except) {
+        document.querySelectorAll('.app-nav-group.is-open').forEach(function (g) {
+            if (g === except) return;
+            g.classList.remove('is-open');
+            var t = g.querySelector('.app-nav-trigger');
+            var m = g.querySelector('.app-nav-menu');
+            if (t) t.setAttribute('aria-expanded', 'false');
+            if (m) m.hidden = true;
+        });
+        var um = document.getElementById('app-user-menu');
+        var ub = document.getElementById('app-user-btn');
+        if (um && except !== um) { um.hidden = true; if (ub) ub.setAttribute('aria-expanded', 'false'); }
+    }
+
+    function tickClock() {
+        var t = document.getElementById('app-clock-time');
+        if (!t) return;
+        var now = new Date();
+        t.textContent = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        var d = document.getElementById('app-clock-date');
+        if (d) d.textContent = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        var nav = document.getElementById('app-nav');
+        if (!nav) return;
+
+        nav.querySelectorAll('.app-nav-group').forEach(function (group) {
+            var trigger = group.querySelector('.app-nav-trigger');
+            var menu = group.querySelector('.app-nav-menu');
+            if (!trigger || !menu) return;
+            trigger.addEventListener('click', function (e) {
+                e.stopPropagation();
+                var open = !group.classList.contains('is-open');
+                closeAll(group);
+                group.classList.toggle('is-open', open);
+                trigger.setAttribute('aria-expanded', String(open));
+                menu.hidden = !open;
+            });
+        });
+
+        var userBtn = document.getElementById('app-user-btn');
+        var userMenu = document.getElementById('app-user-menu');
+        if (userBtn && userMenu) {
+            userBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                var open = userMenu.hidden;
+                closeAll(userMenu);
+                userMenu.hidden = !open;
+                userBtn.setAttribute('aria-expanded', String(open));
+            });
+        }
+
+        var toggle = document.getElementById('app-nav-toggle');
+        if (toggle) {
+            toggle.addEventListener('click', function (e) {
+                e.stopPropagation();
+                var open = !nav.classList.contains('is-open');
+                nav.classList.toggle('is-open', open);
+                toggle.setAttribute('aria-expanded', String(open));
+            });
+        }
+
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest('.app-nav-group') && !e.target.closest('.app-user')) closeAll();
+            if (nav.classList.contains('is-open') && !e.target.closest('#app-nav') && !e.target.closest('#app-nav-toggle')) {
+                nav.classList.remove('is-open');
+                if (toggle) toggle.setAttribute('aria-expanded', 'false');
+            }
+        });
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeAll(); });
+
+        tickClock();
+        setInterval(tickClock, 15000);
+    });
+})();

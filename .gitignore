@@ -1,0 +1,19 @@
+# not functional, but useful for local development
+# Local secrets and machine-specific settings
+.env
+.env.*
+!.env.example
+/includes/config.local.php
+
+# Dependencies, if installed locally
+/vendor/
+/node_modules/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+
+# Operating-system files
+.DS_Store
+Thumbs.db

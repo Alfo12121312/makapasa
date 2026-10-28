@@ -3,6 +3,7 @@
  * File: Admin/Suppliers.php
  * Purpose: Manage supplier master data and summaries.
  */
+// Bootstrap and authorization
 require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 
@@ -22,12 +23,13 @@ function is_valid_contact_number($value) {
     return $value === '' || preg_match('/^[0-9\+\-\s]+$/', $value);
 }
 
+// Input and actions
 $editing_supplier = null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['toggle_status'])) {
     $supplier_id = (int)($_POST['supplier_id'] ?? 0);
     $action = $_POST['supplier_action'] ?? 'add';
-    $name = trim($_POST['supplier_name'] ?? '');
+    $name = normalize_label($_POST['supplier_name'] ?? '');
     $number = trim($_POST['contact_number'] ?? '');
     $email = trim($_POST['contact_email'] ?? '');
     $description = trim($_POST['supplier_description'] ?? '');
@@ -64,6 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['toggle_status'])) {
     exit;
 }
 
+// Data loading
 if (isset($_GET['id'])) {
     $id = (int)$_GET['id'];
     if ($id > 0) {
@@ -118,6 +121,7 @@ $totalsSql = "SELECT COUNT(*) AS supplier_count,
 $totals = $conn->query($totalsSql);
 $summary = $totals ? $totals->fetch_assoc() : ['supplier_count' => 0, 'active_count' => 0];
 
+// Rendering
 $page_title = 'Suppliers';
 $breadcrumb = ['Inventory', 'Suppliers'];
 $active = 'Suppliers.php';

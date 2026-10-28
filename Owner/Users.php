@@ -7,5 +7,7 @@
  */
 require_once __DIR__ . "/../includes/auth.php";
 require_roles(['Owner'], '../Login.php');
+
+// Redirect owners to the dashboard; user management is not available here.
 header("Location: Dashboard-Owner.php");
 exit();

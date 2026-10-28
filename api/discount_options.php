@@ -1,15 +1,17 @@
 <?php
 require_once __DIR__ . '/../includes/app.php';
+api_harden_errors();
 require_roles(['Admin', 'Owner', 'Cashier'], '../Login.php');
 
+// Load active discounts that cashiers can select
 $conn = app_connect();
 
 $stmt = $conn->prepare("SELECT id, name, discount_type, discount_value, scope, product_id, min_qty
                         FROM discount_rules
                         WHERE is_active = 1
                           AND cashier_selectable = 1
-                          AND (start_at IS NULL OR start_at <= NOW())
-                          AND (end_at IS NULL OR end_at >= NOW())
+                          AND (start_at IS NULL OR start_at <= '" . app_local_now_str() . "')
+                          AND (end_at IS NULL OR end_at >= '" . app_local_now_str() . "')
                         ORDER BY scope DESC, name ASC");
 
 if (!$stmt) {
@@ -35,6 +37,7 @@ while ($row = $result->fetch_assoc()) {
 $stmt->close();
 $conn->close();
 
+// Return the API response
 json_response([
     'success' => true,
     'discounts' => $discounts,

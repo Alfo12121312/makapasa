@@ -2,23 +2,20 @@
 require_once __DIR__ . "/includes/app.php";
 require_roles(['Admin', 'Owner'], 'Login.php');
 
-// Get current user info from session
+// Database setup and report date filters
 $conn = app_connect();
 
-// AUTO-MIGRATION: Ensure created_at column exists in sales table
-// Tracks when each sale was made for accurate reporting
+// Ensure sales have a timestamp for date-based reporting.
 $checkCreatedAt = $conn->query("SHOW COLUMNS FROM sales LIKE 'created_at'");
 if ($checkCreatedAt && $checkCreatedAt->num_rows === 0) {
     $conn->query("ALTER TABLE sales ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
 }
 
-// FILTER PARAMETERS - Get date range filter from URL
-// Allows users to view sales by: today, week, month, or custom date
+// Read the selected reporting period.
 $filter_type = isset($_GET['filter']) ? $_GET['filter'] : 'today';
 $filter_date = isset($_GET['date']) ? $_GET['date'] : date('Y-m-d');
 
-// CALCULATE DATE RANGE - Convert filter type to actual start/end dates
-// Used to query only relevant sales data for the selected period
+// Convert the selected period to an inclusive date range.
 $start_date = '';
 $end_date = date('Y-m-d 23:59:59');
 
@@ -44,15 +41,7 @@ switch ($filter_type) {
         $end_date = date('Y-m-d 23:59:59');
 }
 
-// Get all sales for the period
-/* $sql = "SELECT s.id, s.cashier_id, s.product_id, s.quantity, s.unit_price, s.discount, 
-        s.total_price, s.product_unit, s.created_at, i.product_name, i.category, c.name as cashier_name
-        FROM sales s
-        JOIN inventory i ON s.product_id = i.id
-        LEFT JOIN users c ON s.cashier_id = c.id
-        WHERE s.created_at BETWEEN ? AND ?
-        ORDER BY s.created_at DESC";
- */
+// Load sales and calculate period totals.
 $sql = "SELECT s.id, i.product_name, c.username AS cashier_name, s.quantity, s.unit_price, s.discount,
         s.total_price, s.product_unit, s.created_at, i.category
         FROM sales s
@@ -67,7 +56,6 @@ $stmt->execute();
 $sales_result = $stmt->get_result();
 $stmt->close();
 
-// Calculate totals
 $total_sales = 0;
 $total_discount = 0;
 $total_quantity = 0;
@@ -76,11 +64,12 @@ $sales_array = [];
 // CALCULATE TOTALS - Sum up all sales data for summary cards
 while ($row = $sales_result->fetch_assoc()) {
     $sales_array[] = $row;
-    $total_sales += $row['total_price'];  // Total revenue from all sales
-    $total_discount += $row['discount'] * $row['quantity'];  // Total discount amount given
-    $total_quantity += $row['quantity'];  // Total units sold
+    $total_sales += $row['total_price'];
+    $total_discount += $row['discount'] * $row['quantity'];
+    $total_quantity += $row['quantity'];
 }
 
+// Export the filtered rows as CSV when requested.
 if (isset($_GET['export']) && $_GET['export'] === 'excel') {
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename=sales_report_' . date('Ymd_His') . '.csv');
@@ -102,8 +91,8 @@ if (isset($_GET['export']) && $_GET['export'] === 'excel') {
     exit();
 }
 
-// TOP SELLING PRODUCTS QUERY - Get 10 best-selling items by quantity
-// Shows which products generate most sales volume and revenue
+// Report breakdowns
+// Top-selling products
 $sql_top = "SELECT i.product_name, i.category, SUM(s.quantity) as total_qty, 
             SUM(s.total_price) as total_revenue
             FROM sales s
@@ -118,8 +107,7 @@ $stmt->execute();
 $top_products_result = $stmt->get_result();
 $stmt->close();
 
-// SALES BY CATEGORY QUERY - Break down sales by product category
-// Shows revenue and volume distribution across different product types
+// Sales by category
 $sql_category = "SELECT i.category, COUNT(s.id) as transaction_count, SUM(s.quantity) as total_qty,
                  SUM(s.total_price) as total_revenue
                  FROM sales s
@@ -134,8 +122,7 @@ $stmt->execute();
 $category_result = $stmt->get_result();
 $stmt->close();
 
-// CASHIER PERFORMANCE QUERY - Measure individual cashier productivity
-// Shows transaction count and total sales per cashier for evaluation
+// Cashier performance
 $sql_cashier = "SELECT u.username AS name, COUNT(s.id) as transactions, SUM(s.total_price) as total_sales
                 FROM sales s
                 JOIN users u ON s.cashier_id = u.id
@@ -221,7 +208,7 @@ require_once __DIR__ . '/includes/header.php';
             <tr>
                 <td><?php echo htmlspecialchars($cat['category']); ?></td>
                 <td><?php echo $cat['transaction_count']; ?></td>
-                <td><?php echo $cat['total_qty']; ?></td>
+                <td><?php echo fmt_qty($cat['total_qty']); ?></td>
                 <td>₱<?php echo number_format($cat['total_revenue'], 2); ?></td>
             </tr>
             <?php endwhile; ?>
@@ -248,7 +235,7 @@ require_once __DIR__ . '/includes/header.php';
             <tr>
                 <td><?php echo htmlspecialchars($prod['product_name']); ?></td>
                 <td><?php echo htmlspecialchars($prod['category']); ?></td>
-                <td><?php echo $prod['total_qty']; ?></td>
+                <td><?php echo fmt_qty($prod['total_qty']); ?></td>
                 <td>₱<?php echo number_format($prod['total_revenue'], 2); ?></td>
             </tr>
             <?php endwhile; ?>
