@@ -1403,7 +1403,10 @@ require_once __DIR__ . '/../includes/header.php';
         <h2>Current stock</h2>
         <p>Each product unit is tracked separately. Stocking in a different unit creates a separate row.</p>
     </div>
-    <span><?php echo number_format(count($inventoryRows)); ?> items</span>
+    <div class="admin-inventory-table-tools">
+        <span><?php echo number_format(count($inventoryRows)); ?> items</span>
+        <button type="button" class="secondary-button" id="printInventoryChecklist" <?php echo empty($inventoryRows) ? 'disabled' : ''; ?>>Print count sheet</button>
+    </div>
 </div>
 <div class="app-table-wrapper admin-inventory-table-wrap">
     <table id="inventoryTable" class="userTable">
@@ -1516,6 +1519,51 @@ require_once __DIR__ . '/../includes/header.php';
     </table>
 </div>
 
+<section class="inventory-checklist-print" aria-label="Printable inventory count checklist">
+    <header class="inventory-checklist-heading">
+        <img src="../assets/logo.png" alt="<?php echo htmlspecialchars(app_name($conn), ENT_QUOTES, 'UTF-8'); ?> logo">
+        <div>
+            <span class="inventory-checklist-kicker">INVENTORY CONTROL · STOCKTAKE</span>
+            <h1><?php echo htmlspecialchars(app_name($conn), ENT_QUOTES, 'UTF-8'); ?></h1>
+            <h2>Physical Inventory Count Checklist</h2>
+        </div>
+        <div class="inventory-checklist-meta">
+            <span>Count date: ____________________</span>
+            <span>Counted by: ____________________</span>
+        </div>
+    </header>
+    <p class="inventory-checklist-instructions">Count each item and record the physical quantity. Note any damage, missing stock, or other discrepancy.</p>
+    <table class="inventory-checklist-table">
+        <thead>
+            <tr>
+                <th>Product</th>
+                <th>Category</th>
+                <th>Location</th>
+                <th>Recorded quantity</th>
+                <th>Physical count</th>
+                <th>Difference</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php foreach ($inventoryRows as $row): ?>
+                <tr>
+                    <td><?php echo htmlspecialchars($row['product_name'], ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td><?php echo htmlspecialchars($row['category'] ?: '—', ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td><?php echo htmlspecialchars($row['inventory_type'], ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td class="inventory-checklist-quantity"><?php echo fmt_qty($row['stock_quantity']) . ' ' . htmlspecialchars(inv_unit_display($row['product_unit']), ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+    <footer class="inventory-checklist-footer">
+        <span>Reviewed by: ______________________________</span>
+    </footer>
+</section>
+
 <?php ob_start(); ?>
 <script>
 (function () {
@@ -1526,6 +1574,17 @@ require_once __DIR__ . '/../includes/header.php';
     var RULE_FACTORS = <?php echo json_encode($ruleFactorMap ?: new stdClass(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
 
     var $ = function (id) { return document.getElementById(id); };
+    var printChecklistButton = $('printInventoryChecklist');
+    if (printChecklistButton) {
+        printChecklistButton.addEventListener('click', function () {
+            document.body.classList.add('printing-inventory-checklist');
+            window.addEventListener('afterprint', function () {
+                document.body.classList.remove('printing-inventory-checklist');
+            }, { once: true });
+            window.print();
+        });
+    }
+
     var esc = function (s) {
         return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
             return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];

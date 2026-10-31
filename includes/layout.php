@@ -69,10 +69,6 @@ function render_app_open(array $opts) {
         // Keep the page hidden until the tab lock has been checked (revealed by the script in render_app_close()).
         echo '<style id="tab-guard-hide">body{visibility:hidden}</style><noscript><style>body{visibility:visible}</style></noscript>' . "\n";
     }
-    if ($context === 'admin') {
-        $adminStyleVersion = filemtime(__DIR__ . '/../Admin/admin.css');
-        echo '<link rel="stylesheet" href="' . htmlspecialchars($root . 'Admin/admin.css?v=' . $adminStyleVersion, ENT_QUOTES, 'UTF-8') . '">' . "\n";
-    }
     echo '</head>' . "\n";
     if (!$bare) {
         $bodyClass = trim($bodyClass . ' app-shell');

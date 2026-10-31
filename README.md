@@ -122,7 +122,7 @@ Turn `seed_demo_users` off (and change default passwords) if this copy will run 
 
 ## Development notes
 
-- Shared site, POS, and Owner dashboard styles live in `style.css`; shared and POS interactions live in `script.js`.
+- All external site, Admin, Owner, and POS styles live in `style.css`; shared and POS interactions live in `script.js`.
 - Use prepared statements for SQL values; escape output in HTML.
 - Do not rename `Admin`, `Cashier`, `Owner`, `includes`, or `api` without updating paths.
 - After editing PHP: `C:\xampp\php\php.exe -l path\to\file.php`
