@@ -270,7 +270,7 @@ require_once __DIR__ . '/../includes/header.php';
                             <span>Opening <strong>PHP <?php echo number_format((float)$session['opening_cash'], 2); ?></strong></span>
                             <span>Cash in <strong>PHP <?php echo number_format((float)$session['cash_in'], 2); ?></strong></span>
                             <span>Cash out <strong>PHP <?php echo number_format((float)$session['cash_out'], 2); ?></strong></span>
-                            <span>Expected <strong>PHP <?php echo number_format($expectedCash, 2); ?></strong></span>
+                            <!-- <span>Expected <strong>PHP <?php echo number_format($expectedCash, 2); ?></strong></span> -->
                             <?php if (!empty($movementDetails[(int)$session['id']])): ?>
                                 <details class="cashier-shift-movement-details">
                                     <summary><?php echo count($movementDetails[(int)$session['id']]); ?> transaction detail<?php echo count($movementDetails[(int)$session['id']]) === 1 ? '' : 's'; ?></summary>

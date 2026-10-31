@@ -39,7 +39,7 @@ In-app conduct rules: [User-Guidelines.php](User-Guidelines.php).
 
 - PHP (mysqli, sessions)
 - MySQL / MariaDB (`agrivet_db`)
-- HTML / CSS / vanilla JS (`style.css`, `pos.css`, `script.js`, `pos.js`)
+- HTML / CSS / vanilla JS (`style.css`, `script.js`)
 - XAMPP (Apache + MySQL) on Windows
 
 No Node build step. Open the folder in the browser after Apache and MySQL are running.
@@ -90,8 +90,7 @@ makapasa/
 ├── includes/       Config, auth, DB helpers, shared header/footer
 ├── assets/         Logo, favicons, payment logos
 ├── database_recovery.sql
-├── style.css / script.js
-└── pos.css / pos.js
+└── style.css / script.js
 ```
 
 How a typical page is built:
@@ -123,7 +122,7 @@ Turn `seed_demo_users` off (and change default passwords) if this copy will run 
 
 ## Development notes
 
-- Keep POS-only UI in `pos.js` / `pos.css`. Shared cart and discount logic lives in `script.js`.
+- Shared site, POS, and Owner dashboard styles live in `style.css`; shared and POS interactions live in `script.js`.
 - Use prepared statements for SQL values; escape output in HTML.
 - Do not rename `Admin`, `Cashier`, `Owner`, `includes`, or `api` without updating paths.
 - After editing PHP: `C:\xampp\php\php.exe -l path\to\file.php`

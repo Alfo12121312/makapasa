@@ -5,10 +5,7 @@
  * Key locations:
  * - `require_once __DIR__ . '/../includes/app.php';` at line 2 (bootstrap + helpers)
  * - `require_roles(...)` at line 3 (access control)
- * - Multiple direct `$conn->query(...)` health and stats queries throughout (examples start around line 22).
- * Known issues / improvements:
- * - Uses direct SQL queries concatenating variables for date ranges (lines ~60-90). Use prepared statements.
- * - Heavy DB work on page load; consider caching or AJAX endpoints for charts (salesTrend, categoryTrend queries near lines ~110-160).
+ * - Dashboard data queries are isolated so a failing panel is logged and shown as a warning without taking down the page.
  */
 // Bootstrap and authorization
 require_once __DIR__ . '/../includes/app.php';
@@ -24,7 +21,7 @@ $stats = [
     'products' => 0,
     'active_products' => 0,
     'today_sales' => 0,
-    'today_orders' => 0,
+    'today_transactions' => 0,
     'low_stock' => 0,
     'employees' => 0,
     'today_attendance' => 0,
@@ -34,46 +31,57 @@ $stats = [
     'statutory_share' => 0
 ];
 $healthWarnings = [];
+$dashboardQuery = static function ($sql, $label) use ($conn, &$healthWarnings) {
+    try {
+        $result = $conn->query($sql);
+        if ($result === false) {
+            throw new RuntimeException($conn->error);
+        }
+        return $result;
+    } catch (Throwable $ex) {
+        error_log('Admin dashboard ' . $label . ' query failed: ' . $ex->getMessage());
+        $healthWarnings[] = ucfirst($label) . ' data could not be loaded.';
+        return false;
+    }
+};
 
-$res = $conn->query("SELECT COUNT(*) total_products,
+$res = $dashboardQuery("SELECT COUNT(*) total_products,
                             SUM(CASE WHEN status='Active' THEN 1 ELSE 0 END) active_products,
                             SUM(CASE WHEN stock_quantity < 10 THEN 1 ELSE 0 END) low_stock
-                     FROM inventory");
+                     FROM inventory", 'inventory summary');
 if ($res && $res->num_rows > 0) {
     $r = $res->fetch_assoc();
     $stats['products'] = (int)$r['total_products'];
     $stats['active_products'] = (int)$r['active_products'];
     $stats['low_stock'] = (int)$r['low_stock'];
-} elseif (!$res) {
-    $healthWarnings[] = 'Inventory query failed.';
 }
 
-$res = $conn->query("SELECT COALESCE(SUM(total_price),0) total_sales, COUNT(*) total_orders
+$res = $dashboardQuery("SELECT COALESCE(SUM(total_price),0) total_sales,
+                            COUNT(DISTINCT sale_reference) total_transactions
                      FROM sales
-                     WHERE DATE(created_at)=CURDATE()");
+                     WHERE DATE(created_at)=CURDATE()", 'today sales');
 if ($res && $res->num_rows > 0) {
     $r = $res->fetch_assoc();
     $stats['today_sales'] = (float)$r['total_sales'];
-    $stats['today_orders'] = (int)$r['total_orders'];
-} elseif (!$res) {
-    $healthWarnings[] = 'Sales query failed. Check if sales.created_at exists.';
+    $stats['today_transactions'] = (int)$r['total_transactions'];
 }
+$todayTransactions = $stats['today_transactions'];
 
 $currentMonth = date('Y-m');
 $currentMonthLabel = date('F Y');
 $monthStart = $currentMonth . '-01';
 $monthEnd = date('Y-m-t', strtotime($monthStart));
-$revenueRes = $conn->query("SELECT COALESCE(SUM(total_price), 0) monthly_revenue FROM sales WHERE DATE(created_at) BETWEEN '$monthStart' AND '$monthEnd'");
+$revenueRes = $dashboardQuery("SELECT COALESCE(SUM(total_price), 0) monthly_revenue FROM sales WHERE DATE(created_at) BETWEEN '$monthStart' AND '$monthEnd'", 'monthly revenue');
 if ($revenueRes && $revenueRes->num_rows > 0) {
     $stats['monthly_revenue'] = (float)$revenueRes->fetch_assoc()['monthly_revenue'];
 }
-$expenseRes = $conn->query("SELECT COALESCE(SUM(amount), 0) monthly_expenses FROM expenses WHERE expense_date BETWEEN '$monthStart' AND '$monthEnd'");
+$expenseRes = $dashboardQuery("SELECT COALESCE(SUM(amount), 0) monthly_expenses FROM expenses WHERE expense_date BETWEEN '$monthStart' AND '$monthEnd'", 'monthly expenses');
 if ($expenseRes && $expenseRes->num_rows > 0) {
     $stats['monthly_expenses'] = (float)$expenseRes->fetch_assoc()['monthly_expenses'];
 }
-$payrollStats = $conn->query("SELECT COALESCE(SUM(gross_salary), 0) payroll_expense, COALESCE(SUM(company_statutory_expense), 0) statutory_share
+$payrollStats = $dashboardQuery("SELECT COALESCE(SUM(gross_salary), 0) payroll_expense, COALESCE(SUM(company_statutory_expense), 0) statutory_share
                              FROM payroll_records
-                             WHERE period_start >= '$monthStart' AND period_end <= '$monthEnd'");
+                             WHERE period_start >= '$monthStart' AND period_end <= '$monthEnd'", 'monthly payroll');
 if ($payrollStats && $payrollStats->num_rows > 0) {
     $p = $payrollStats->fetch_assoc();
     $stats['payroll_expense'] = (float)$p['payroll_expense'];
@@ -81,20 +89,46 @@ if ($payrollStats && $payrollStats->num_rows > 0) {
 }
 $netProfit = $stats['monthly_revenue'] - $stats['monthly_expenses'] - $stats['payroll_expense'] - $stats['statutory_share'];
 
-$res = $conn->query("SELECT COUNT(*) total_employees FROM employees WHERE status='Active'");
-if ($res && $res->num_rows > 0) {
-    $stats['employees'] = (int)$res->fetch_assoc()['total_employees'];
-} elseif (!$res) {
-    $healthWarnings[] = 'Employees query failed.';
+$operationsQueue = [
+    'purchase_orders' => 0,
+    'partial_orders' => 0,
+    'open_shifts' => 0,
+    'pending_layaways' => 0,
+    'layaway_balance' => 0.0,
+];
+$purchaseOrderRes = $dashboardQuery("SELECT COUNT(*) open_orders,
+                                         SUM(CASE WHEN status = 'Partially Received' THEN 1 ELSE 0 END) partial_orders
+                                  FROM purchase_orders
+                                  WHERE status IN ('Pending', 'Ordered', 'Partially Received')", 'open purchase orders');
+if ($purchaseOrderRes) {
+    $purchaseOrderRow = $purchaseOrderRes->fetch_assoc();
+    $operationsQueue['purchase_orders'] = (int)$purchaseOrderRow['open_orders'];
+    $operationsQueue['partial_orders'] = (int)$purchaseOrderRow['partial_orders'];
+}
+$openShiftsRes = $dashboardQuery("SELECT COUNT(*) open_shifts FROM cashier_sessions WHERE status = 'Open'", 'open cashier shifts');
+if ($openShiftsRes) {
+    $operationsQueue['open_shifts'] = (int)$openShiftsRes->fetch_assoc()['open_shifts'];
+}
+$layawayQueueRes = $dashboardQuery("SELECT COUNT(*) pending_layaways,
+                                           COALESCE(SUM(balance_amount), 0) layaway_balance
+                                    FROM layaways
+                                    WHERE status = 'Pending'", 'pending layaways');
+if ($layawayQueueRes) {
+    $layawayQueue = $layawayQueueRes->fetch_assoc();
+    $operationsQueue['pending_layaways'] = (int)$layawayQueue['pending_layaways'];
+    $operationsQueue['layaway_balance'] = (float)$layawayQueue['layaway_balance'];
 }
 
-$res = $conn->query("SELECT COUNT(*) total_present
+$res = $dashboardQuery("SELECT COUNT(*) total_employees FROM employees WHERE status='Active'", 'employee count');
+if ($res && $res->num_rows > 0) {
+    $stats['employees'] = (int)$res->fetch_assoc()['total_employees'];
+}
+
+$res = $dashboardQuery("SELECT COUNT(*) total_present
                      FROM attendance
-                     WHERE attendance_date = CURDATE() AND time_in IS NOT NULL");
+                     WHERE attendance_date = CURDATE() AND time_in IS NOT NULL", 'attendance count');
 if ($res && $res->num_rows > 0) {
     $stats['today_attendance'] = (int)$res->fetch_assoc()['total_present'];
-} elseif (!$res) {
-    $healthWarnings[] = 'Attendance query failed.';
 }
 
 // Low stock and near-expiry products, for the alerts panel below (not a
@@ -102,34 +136,40 @@ if ($res && $res->num_rows > 0) {
 // actually needs to act on).
 $lowStockThreshold = 10;
 $lowStockProducts = [];
-$lowStockRes = $conn->query("SELECT id, product_name, category, stock_quantity
+$lowStockRes = $dashboardQuery("SELECT id, product_name, category, stock_quantity
                              FROM inventory
                              WHERE status = 'Active' AND stock_quantity < {$lowStockThreshold}
                              ORDER BY stock_quantity ASC
-                             LIMIT 8");
+                             LIMIT 8", 'low stock list');
 if ($lowStockRes) {
     while ($row = $lowStockRes->fetch_assoc()) {
         $lowStockProducts[] = $row;
     }
 }
 
-$nearExpiryProducts = get_near_expiration_products($conn, 7);
+$nearExpiryProducts = [];
+try {
+    $nearExpiryProducts = get_near_expiration_products($conn, 7);
+} catch (Throwable $ex) {
+    error_log('Admin dashboard near-expiry query failed: ' . $ex->getMessage());
+    $healthWarnings[] = 'Near-expiry stock data could not be loaded.';
+}
 
-$topProducts = $conn->query("SELECT i.product_name, SUM(s.quantity) qty, SUM(s.total_price) revenue
+$topProducts = $dashboardQuery("SELECT i.product_name, SUM(s.quantity) qty, SUM(s.total_price) revenue
                              FROM sales s
                              JOIN inventory i ON i.id = s.product_id
                              WHERE DATE(s.created_at) >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
                              GROUP BY s.product_id
                              ORDER BY qty DESC
-                             LIMIT 5");
+                             LIMIT 5", 'top products');
 
 $salesTrendLabels = [];
 $salesTrendValues = [];
-$salesTrend = $conn->query("SELECT DATE(created_at) sale_day, COALESCE(SUM(total_price), 0) total_sales
+$salesTrend = $dashboardQuery("SELECT DATE(created_at) sale_day, COALESCE(SUM(total_price), 0) total_sales
                             FROM sales
                             WHERE DATE(created_at) >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
                             GROUP BY DATE(created_at)
-                            ORDER BY sale_day ASC");
+                            ORDER BY sale_day ASC", 'weekly sales chart');
 $salesMap = [];
 if ($salesTrend) {
     while ($row = $salesTrend->fetch_assoc()) {
@@ -144,13 +184,13 @@ for ($i = 6; $i >= 0; $i--) {
 
 $categoryLabels = [];
 $categoryValues = [];
-$categoryTrend = $conn->query("SELECT i.category, COALESCE(SUM(s.total_price), 0) total_sales
+$categoryTrend = $dashboardQuery("SELECT i.category, COALESCE(SUM(s.total_price), 0) total_sales
                                FROM sales s
                                JOIN inventory i ON i.id = s.product_id
                                WHERE DATE(s.created_at) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
                                GROUP BY i.category
                                ORDER BY total_sales DESC
-                               LIMIT 6");
+                               LIMIT 6", 'category sales chart');
 if ($categoryTrend) {
     while ($row = $categoryTrend->fetch_assoc()) {
         $categoryLabels[] = $row['category'] ?: 'Uncategorized';
@@ -181,6 +221,48 @@ require_once __DIR__ . '/../includes/header.php';
             <small><?php echo htmlspecialchars($currentMonthLabel, ENT_QUOTES, 'UTF-8'); ?> at a glance</small>
         </div>
     </header>
+
+    <?php if (!$healthOk): ?>
+    <div class="dashboard-health-warning" role="alert">
+        <strong>Some dashboard data could not be loaded.</strong>
+        <span><?php echo htmlspecialchars(implode(' ', array_unique($healthWarnings)), ENT_QUOTES, 'UTF-8'); ?></span>
+    </div>
+    <?php endif; ?>
+
+    <section class="dashboard-section dashboard-operations-queue" aria-labelledby="operations-queue-title">
+        <div class="dashboard-section-heading">
+            <div>
+                <h2 id="operations-queue-title">Operations to follow up</h2>
+                <p>Open work that may need an Admin action.</p>
+            </div>
+        </div>
+        <div class="operations-queue-grid">
+            <article class="operations-queue-card">
+                <span class="operations-queue-icon" aria-hidden="true">PO</span>
+                <div>
+                    <strong><?php echo number_format($operationsQueue['purchase_orders']); ?> open purchase order<?php echo $operationsQueue['purchase_orders'] === 1 ? '' : 's'; ?></strong>
+                    <small><?php echo number_format($operationsQueue['partial_orders']); ?> partially received · check pending deliveries</small>
+                </div>
+                <a href="Purchasing.php">Review orders <span aria-hidden="true">→</span></a>
+            </article>
+            <article class="operations-queue-card">
+                <span class="operations-queue-icon" aria-hidden="true">↻</span>
+                <div>
+                    <strong><?php echo number_format($operationsQueue['open_shifts']); ?> open cashier shift<?php echo $operationsQueue['open_shifts'] === 1 ? '' : 's'; ?></strong>
+                    <small>Monitor live shifts and drawer closeouts</small>
+                </div>
+                <a href="Shift-Report.php">Review shifts <span aria-hidden="true">→</span></a>
+            </article>
+            <article class="operations-queue-card">
+                <span class="operations-queue-icon" aria-hidden="true">₱</span>
+                <div>
+                    <strong><?php echo number_format($operationsQueue['pending_layaways']); ?> pending lay-away<?php echo $operationsQueue['pending_layaways'] === 1 ? '' : 's'; ?></strong>
+                    <small>PHP <?php echo number_format($operationsQueue['layaway_balance'], 2); ?> remaining balance</small>
+                </div>
+                <a href="Layaway.php">Review lay-aways <span aria-hidden="true">→</span></a>
+            </article>
+        </div>
+    </section>
 
     <?php if (!empty($lowStockProducts) || !empty($nearExpiryProducts)): ?>
     <section class="dashboard-alerts">
@@ -249,9 +331,9 @@ require_once __DIR__ . '/../includes/header.php';
                 <span class="dashboard-stat-note">Recorded revenue</span>
             </article>
             <article class="stat-card dashboard-stat orders-stat">
-                <div class="dashboard-stat-top"><span class="label">Sales records</span><span class="dashboard-stat-mark" aria-hidden="true">#</span></div>
-                <div class="value"><?php echo number_format($stats['today_orders']); ?></div>
-                <span class="dashboard-stat-note">Entries today</span>
+                <div class="dashboard-stat-top"><span class="label">Transactions</span><span class="dashboard-stat-mark" aria-hidden="true">#</span></div>
+                <div class="value"><?php echo number_format($todayTransactions); ?></div>
+                <span class="dashboard-stat-note">Distinct sale references today</span>
             </article>
             <article class="stat-card dashboard-stat products-stat">
                 <div class="dashboard-stat-top"><span class="label">Active products</span><span class="dashboard-stat-mark" aria-hidden="true">P</span></div>

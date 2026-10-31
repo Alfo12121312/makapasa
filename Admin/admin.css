@@ -1921,7 +1921,10 @@
 }
 .admin-po-create {
     position: relative;
-    overflow: hidden;
+    max-height: calc(100vh - 320px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 21px 18px;
     border-right: 1px solid var(--po-line);
     border-radius: 11px 0 0 11px;
@@ -3690,4 +3693,79 @@
 @media print {
     body.printing-payroll .app-page-heading,
     body.printing-payroll-all .app-page-heading { display: none !important; }
+}
+
+/* Admin dashboard operational queue and data-health warning */
+.admin-context .dashboard-health-warning {
+    display: grid;
+    gap: 4px;
+    margin: 0 0 20px;
+    padding: 13px 16px;
+    border: 1px solid #e8c6b8;
+    border-left: 4px solid #b65335;
+    border-radius: 10px;
+    background: #fff5f0;
+    color: #71341f;
+    font-size: 12px;
+    line-height: 1.5;
+}
+.admin-context .dashboard-health-warning strong { font-size: 13px; }
+.admin-context .operations-queue-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+.admin-context .operations-queue-card {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr);
+    align-items: start;
+    gap: 11px;
+    min-width: 0;
+    padding: 15px;
+    border: 1px solid var(--admin-line);
+    border-radius: 12px;
+    background: #fffefa;
+    box-shadow: 0 4px 14px rgba(42, 58, 40, .04);
+}
+.admin-context .operations-queue-icon {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border-radius: 10px;
+    background: #edf3e9;
+    color: var(--admin-green);
+    font-size: 11px;
+    font-weight: 800;
+}
+.admin-context .operations-queue-card > div { min-width: 0; }
+.admin-context .operations-queue-card strong {
+    display: block;
+    color: var(--admin-ink);
+    font-size: 13px;
+    line-height: 1.4;
+}
+.admin-context .operations-queue-card small {
+    display: block;
+    margin-top: 4px;
+    color: var(--admin-muted);
+    font-size: 11px;
+    line-height: 1.5;
+}
+.admin-context .operations-queue-card a {
+    grid-column: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--admin-green);
+    font-size: 11px;
+    font-weight: 800;
+    text-decoration: none;
+}
+.admin-context .operations-queue-card a:hover { text-decoration: underline; }
+@media (max-width: 900px) {
+    .admin-context .operations-queue-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+    .admin-context .operations-queue-card { padding: 13px; }
 }

@@ -72,9 +72,6 @@ function render_app_open(array $opts) {
     if ($context === 'admin') {
         $adminStyleVersion = filemtime(__DIR__ . '/../Admin/admin.css');
         echo '<link rel="stylesheet" href="' . htmlspecialchars($root . 'Admin/admin.css?v=' . $adminStyleVersion, ENT_QUOTES, 'UTF-8') . '">' . "\n";
-    } elseif ($context === 'owner') {
-        $ownerStyleVersion = filemtime(__DIR__ . '/../Owner/owner.css');
-        echo '<link rel="stylesheet" href="' . htmlspecialchars($root . 'Owner/owner.css?v=' . $ownerStyleVersion, ENT_QUOTES, 'UTF-8') . '">' . "\n";
     }
     echo '</head>' . "\n";
     if (!$bare) {

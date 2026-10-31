@@ -360,7 +360,6 @@ $cashierName = auth_username();
 $esc = function ($value) {
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 };
-$posStyleVersion = filemtime(__DIR__ . '/../pos.css');
 render_app_open([
     'context' => 'cashier',
     'active' => 'POS.php',
@@ -369,7 +368,6 @@ render_app_open([
     'bare' => true,
     'body_class' => 'pos-body',
     'content_class' => 'pos-app',
-    'extra_head' => '<link rel="stylesheet" href="../pos.css?v=' . $posStyleVersion . '">' . "\n",
 ]);
 ?>
 
@@ -427,12 +425,12 @@ render_app_open([
             <?php if ($shiftAutoLabel !== ''): ?>
             <p class="pos-dialog-copy"><small>If a shift is left open, it is closed automatically at <?php echo htmlspecialchars($shiftAutoLabel, ENT_QUOTES, 'UTF-8'); ?> and the cash is recorded as not counted.</small></p>
             <?php endif; ?>
-            <dl class="pos-recon">
+            <!-- <dl class="pos-recon">
                 <div><dt>Opening cash</dt><dd>PHP <?php echo number_format((float)$session['opening_cash'], 2); ?></dd></div>
                 <div><dt>Cash in</dt><dd>PHP <?php echo number_format((float)$session['cash_in'], 2); ?></dd></div>
                 <div><dt>Cash out</dt><dd>PHP <?php echo number_format((float)$session['cash_out'], 2); ?></dd></div>
                 <div><dt>Shift sales</dt><dd id="end-shift-sales">PHP <?php echo number_format((float)$session['total_sales'], 2); ?></dd></div>
-            </dl>
+            </dl> -->
             <form method="post" class="pos-dialog-form">
                 <?php csrf_field(); ?>
                 <section class="pos-cash-movements" aria-labelledby="cash-movements-title">
@@ -465,9 +463,9 @@ render_app_open([
                     <span>Additional cash in <strong id="cash-movement-in-total">PHP 0.00</strong></span>
                     <span>Additional cash out <strong id="cash-movement-out-total">PHP 0.00</strong></span>
                 </div>
-                <dl class="pos-recon pos-recon-expected">
+                <!-- <dl class="pos-recon pos-recon-expected">
                     <div class="is-total"><dt>Expected drawer cash</dt><dd id="expected-closing-cash" data-base="<?php echo htmlspecialchars(number_format($expectedDrawerCash, 2, '.', ''), ENT_QUOTES, 'UTF-8'); ?>">PHP <?php echo number_format($expectedDrawerCash, 2); ?></dd></div>
-                </dl>
+                </dl> -->
                 <label for="closing-cash">Counted closing cash (PHP)</label>
                 <input type="number" id="closing-cash" name="closing_cash" step="0.01" min="0" placeholder="0.00" inputmode="decimal" required>
                 <div class="pos-dialog-actions">
@@ -730,31 +728,22 @@ window.shiftExpectedBase = <?php echo $sessionOpen ? json_encode((float)$session
 </script>
 <script>
 (function () {
-    var list = document.getElementById('cash-movement-list');
-    var addButton = document.getElementById('add-cash-movement');
-    var expectedDisplay = document.getElementById('expected-closing-cash');
-    var cashInDisplay = document.getElementById('cash-movement-in-total');
-    var cashOutDisplay = document.getElementById('cash-movement-out-total');
-    if (!list || !addButton || !expectedDisplay || !cashInDisplay || !cashOutDisplay) return;
+        var list = document.getElementById('cash-movement-list');
+        var addButton = document.getElementById('add-cash-movement');
+        var cashInDisplay = document.getElementById('cash-movement-in-total');
+        var cashOutDisplay = document.getElementById('cash-movement-out-total');
+        if (!list || !addButton || !cashInDisplay || !cashOutDisplay) return;
 
-    var baseExpected = parseFloat(expectedDisplay.dataset.base) || 0;
-    var movementRowLimit = 20;
+        var movementRowLimit = 20;
 
     function updateExpectedCash() {
-        var expected = baseExpected;
         var cashIn = 0;
         var cashOut = 0;
         list.querySelectorAll('.pos-cash-movement-row').forEach(function (row) {
             var amount = parseFloat(row.querySelector('.cash-movement-amount').value) || 0;
-            if (row.querySelector('.cash-movement-type').value === 'in') {
-                cashIn += amount;
-                expected += amount;
-            } else {
-                cashOut += amount;
-                expected -= amount;
-            }
+                if (row.querySelector('.cash-movement-type').value === 'in') cashIn += amount;
+                else cashOut += amount;
         });
-        expectedDisplay.textContent = 'PHP ' + expected.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         cashInDisplay.textContent = 'PHP ' + cashIn.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         cashOutDisplay.textContent = 'PHP ' + cashOut.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
@@ -792,5 +781,4 @@ window.shiftExpectedBase = <?php echo $sessionOpen ? json_encode((float)$session
     });
 })();
 </script>
-<script src="../pos.js"></script>
 <?php render_app_close(['context' => 'cashier']); ?>

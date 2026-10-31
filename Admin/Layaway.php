@@ -22,7 +22,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         : (isset($_POST['add_payment']) ? 'payment' : (isset($_POST['cancel_layaway']) ? 'cancel' : ''));
 
     if ($action === 'create') {
+        $customerModeRaw = $_POST['customer_mode'] ?? 'existing';
+        $customerMode = is_scalar($customerModeRaw) ? trim((string)$customerModeRaw) : '';
         $customerId = filter_input(INPUT_POST, 'customer_id', FILTER_VALIDATE_INT);
+        $customerNameRaw = $_POST['customer_name'] ?? '';
+        $customerPhoneRaw = $_POST['customer_phone'] ?? '';
+        $customerAddressRaw = $_POST['customer_address'] ?? '';
+        $customerName = is_scalar($customerNameRaw) ? trim((string)$customerNameRaw) : '';
+        $customerPhone = is_scalar($customerPhoneRaw) ? trim((string)$customerPhoneRaw) : '';
+        $customerAddress = is_scalar($customerAddressRaw) ? trim((string)$customerAddressRaw) : '';
         $productId = filter_input(INPUT_POST, 'product_id', FILTER_VALIDATE_INT);
         $quantityRaw = $_POST['quantity'] ?? '';
         $downPaymentRaw = $_POST['down_payment'] ?? '';
@@ -32,7 +40,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $notes = is_scalar($notesRaw) ? trim((string)$notesRaw) : '';
 
         $notesLength = function_exists('mb_strlen') ? mb_strlen($notes, 'UTF-8') : strlen($notes);
-        if (!$customerId || !$productId || !preg_match('/^\d{1,9}(?:\.\d{1,3})?$/', $quantityInput) || (float)$quantityInput <= 0) {
+        $customerNameLength = function_exists('mb_strlen') ? mb_strlen($customerName, 'UTF-8') : strlen($customerName);
+        $customerPhoneLength = function_exists('mb_strlen') ? mb_strlen($customerPhone, 'UTF-8') : strlen($customerPhone);
+        $customerAddressLength = function_exists('mb_strlen') ? mb_strlen($customerAddress, 'UTF-8') : strlen($customerAddress);
+        $validCustomer = ($customerMode === 'existing' && $customerId)
+            || ($customerMode === 'new' && $customerName !== '' && $customerNameLength <= 120
+                && $customerPhoneLength <= 40 && $customerAddressLength <= 200);
+        if ($customerMode === 'new' && ($customerNameLength > 120 || $customerPhoneLength > 40 || $customerAddressLength > 200)) {
+            flash_error('Customer name, phone, or address is too long.');
+        } elseif (!$validCustomer || !$productId || !preg_match('/^\d{1,9}(?:\.\d{1,3})?$/', $quantityInput) || (float)$quantityInput <= 0) {
             flash_error('Select a customer and product, then enter a valid quantity.');
         } elseif (!preg_match('/^\d{1,10}(?:\.\d{1,2})?$/', $downPaymentInput)) {
             flash_error('Enter a valid down payment of zero or more.');
@@ -44,13 +60,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $userId = auth_user_id();
             $conn->begin_transaction();
             try {
-                $customerStmt = $conn->prepare('SELECT full_name FROM customers WHERE id = ?');
-                if (!$customerStmt) throw new RuntimeException('Could not prepare customer lookup.');
-                $customerStmt->bind_param('i', $customerId);
-                if (!$customerStmt->execute()) throw new RuntimeException('Could not load the selected customer.');
-                $customer = $customerStmt->get_result()->fetch_assoc();
-                $customerStmt->close();
-
                 $productStmt = $conn->prepare("SELECT product_name, product_unit, price, stock_quantity
                                                FROM inventory WHERE id = ? AND status = 'Active' FOR UPDATE");
                 if (!$productStmt) throw new RuntimeException('Could not prepare product lookup.');
@@ -59,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $product = $productStmt->get_result()->fetch_assoc();
                 $productStmt->close();
 
-                if (!$customer || !$product) throw new DomainException('The selected customer or active product could not be found.');
+                if (!$product) throw new DomainException('The selected active product could not be found.');
                 $isKg = is_kg_unit($product['product_unit']);
                 if (!$isKg && abs($quantity - round($quantity)) > 0.0005) {
                     throw new DomainException('Fractional quantities are only allowed for kilogram products.');
@@ -72,9 +81,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($downPayment > $totalAmount) {
                     throw new DomainException('Down payment cannot be greater than the order total of PHP ' . number_format($totalAmount, 2) . '.');
                 }
+
+                if ($customerMode === 'existing') {
+                    $customerStmt = $conn->prepare('SELECT full_name FROM customers WHERE id = ?');
+                    if (!$customerStmt) throw new RuntimeException('Could not prepare customer lookup.');
+                    $customerStmt->bind_param('i', $customerId);
+                    if (!$customerStmt->execute()) throw new RuntimeException('Could not load the selected customer.');
+                    $customer = $customerStmt->get_result()->fetch_assoc();
+                    $customerStmt->close();
+                    if (!$customer) throw new DomainException('The selected customer could not be found.');
+                    $customerName = $customer['full_name'];
+                } else {
+                    $customerStmt = $conn->prepare('INSERT INTO customers (full_name, phone, address) VALUES (?, ?, ?)');
+                    if (!$customerStmt) throw new RuntimeException('Could not prepare the new customer record.');
+                    $customerStmt->bind_param('sss', $customerName, $customerPhone, $customerAddress);
+                    if (!$customerStmt->execute()) throw new RuntimeException('Could not save the new customer.');
+                    $customerStmt->close();
+                }
+
                 $balance = round($totalAmount - $downPayment, 2);
                 $status = $balance <= 0 ? 'Released' : 'Pending';
-                $customerName = $customer['full_name'];
                 $stmt = $conn->prepare("INSERT INTO layaways (customer_name, total_amount, down_payment, balance_amount, notes, created_by, status, released_at)
                                         VALUES (?, ?, ?, ?, ?, ?, ?, IF(? = 'Released', NOW(), NULL))");
                 if (!$stmt) throw new RuntimeException('Could not prepare the Lay-Away account.');
@@ -301,6 +327,7 @@ $customers = $conn->query(
      FROM customers
      ORDER BY full_name ASC"
 );
+$hasCustomers = $customers && $customers->num_rows > 0;
 $products = $conn->query(
     "SELECT id, product_name, product_unit, price, stock_quantity
      FROM inventory
@@ -384,20 +411,33 @@ require_once __DIR__ . '/../includes/header.php';
             <div class="admin-layaway-empty"><strong>Product list unavailable</strong><p>Please refresh after the inventory data connection is restored.</p></div>
         <?php elseif (!$customers): ?>
             <div class="admin-layaway-empty"><strong>Customer list unavailable</strong><p>Please refresh after the customer data connection is restored.</p></div>
-        <?php elseif ($customers->num_rows === 0): ?>
-            <div class="admin-layaway-empty"><strong>No customers found</strong><p>Add a customer before creating a Lay-Away account.</p><a href="Customers.php">Open Customer Management</a></div>
         <?php elseif (!$products || $products->num_rows === 0): ?>
             <div class="admin-layaway-empty"><strong>No active products available</strong><p>Activate a product with available stock before creating a Lay-Away account.</p></div>
         <?php else: ?>
         <form method="post" class="admin-layaway-create-form">
             <?php csrf_field(); ?>
-            <label>Customer
-                <select name="customer_id" required>
+            <label>Customer type
+                <select id="layawayCustomerMode" name="customer_mode" required>
+                    <option value="existing" <?php echo $hasCustomers ? 'selected' : 'disabled'; ?>>Choose saved customer</option>
+                    <option value="new" <?php echo $hasCustomers ? '' : 'selected'; ?>>Add a new customer</option>
+                </select>
+            </label>
+            <label id="layawayExistingCustomerField" style="<?php echo $hasCustomers ? '' : 'display:none'; ?>">Saved customer
+                <select name="customer_id" id="layawayCustomer">
                     <option value="">Select a customer</option>
-                    <?php while ($customer = $customers->fetch_assoc()): ?>
+                    <?php while ($customers && $customer = $customers->fetch_assoc()): ?>
                         <option value="<?php echo (int)$customer['id']; ?>"><?php echo htmlspecialchars($customer['full_name'], ENT_QUOTES, 'UTF-8'); ?></option>
                     <?php endwhile; ?>
                 </select>
+            </label>
+            <label data-layaway-new-customer>Customer name
+                <input type="text" name="customer_name" maxlength="120" placeholder="Full name">
+            </label>
+            <label data-layaway-new-customer>Phone number <span class="admin-layaway-optional">Optional</span>
+                <input type="tel" name="customer_phone" maxlength="40" placeholder="e.g. 09xx xxx xxxx">
+            </label>
+            <label data-layaway-new-customer>Address <span class="admin-layaway-optional">Optional</span>
+                <input type="text" name="customer_address" maxlength="200" placeholder="Street, barangay, or town">
             </label>
             <label>Product
                 <select id="layawayProduct" name="product_id" required>
@@ -512,6 +552,27 @@ require_once __DIR__ . '/../includes/header.php';
         var qty = document.getElementById('layawayQty');
         var downPayment = document.getElementById('layawayDownPayment');
         var estimate = document.getElementById('layawayEstimate');
+        var customerMode = document.getElementById('layawayCustomerMode');
+        var existingCustomerField = document.getElementById('layawayExistingCustomerField');
+        var customerSelect = document.getElementById('layawayCustomer');
+        var newCustomerFields = Array.prototype.slice.call(document.querySelectorAll('[data-layaway-new-customer]'));
+        function syncCustomerFields() {
+            if (!customerMode) return;
+            var useExisting = customerMode.value === 'existing';
+            if (existingCustomerField) existingCustomerField.style.display = useExisting ? 'grid' : 'none';
+            if (customerSelect) {
+                customerSelect.required = useExisting;
+                customerSelect.disabled = !useExisting;
+            }
+            newCustomerFields.forEach(function (field) {
+                field.style.display = useExisting ? 'none' : 'grid';
+                var input = field.querySelector('input');
+                if (input) {
+                    input.required = !useExisting && input.name === 'customer_name';
+                    input.disabled = useExisting;
+                }
+            });
+        }
         function syncQuantity() {
             if (!sel || !qty) return;
             var opt = sel.options[sel.selectedIndex];
@@ -542,6 +603,10 @@ require_once __DIR__ . '/../includes/header.php';
             sel.addEventListener('change', syncQuantity);
             qty.addEventListener('input', updateEstimate);
             syncQuantity();
+        }
+        if (customerMode) {
+            customerMode.addEventListener('change', syncCustomerFields);
+            syncCustomerFields();
         }
         var search = document.getElementById('layaway-search');
         var status = document.getElementById('layaway-status-filter');
