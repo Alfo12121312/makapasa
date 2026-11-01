@@ -45,7 +45,9 @@ if ($cashiers_stmt && $cashiers_stmt->execute()) {
 }
 
 // Build query with filters
-$query = "SELECT cs.*, u.username
+$query = "SELECT cs.*, u.username,
+                 (SELECT COALESCE(SUM(s.total_price), 0) FROM sales s
+                  WHERE s.shift_id = cs.id AND s.payment_method = 'Cash') AS cash_sales
           FROM cashier_sessions cs
           LEFT JOIN users u ON u.id = cs.cashier_id
           WHERE DATE(cs.session_date) >= ? AND DATE(cs.session_date) <= ?";
@@ -84,7 +86,7 @@ foreach ($sessions as $sessionRow) {
     } else {
         $summary['closed']++;
         if ($sessionRow['closing_cash'] !== null) {
-            $expected = (float)$sessionRow['opening_cash'] + (float)$sessionRow['cash_in'] + (float)$sessionRow['total_sales'] - (float)$sessionRow['cash_out'];
+            $expected = (float)$sessionRow['opening_cash'] + (float)$sessionRow['cash_in'] + (float)$sessionRow['cash_sales'] - (float)$sessionRow['cash_out'];
             $summary['variance'] += (float)$sessionRow['closing_cash'] - $expected;
         }
     }
@@ -148,7 +150,7 @@ require_once __DIR__ . '/../includes/header.php';
     </section>
     <section class="admin-shift-table-section">
         <div class="admin-shift-table-heading">
-            <div><h2>Shift activity</h2><p>Expected cash = opening cash + cash in + sales − cash out.</p></div>
+            <div><h2>Shift activity</h2><p>Expected cash = opening cash + cash in + cash sales − cash out. Sales includes cashless payments.</p></div>
             <span><?php echo number_format(count($sessions)); ?> records</span>
         </div>
         <div class="user-table-wrapper admin-shift-table-wrap">
@@ -163,6 +165,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <th>Cash In (PHP)</th>
                     <th>Cash Out (PHP)</th>
                     <th>Sales (PHP)</th>
+                    <th>Cash Sales (PHP)</th>
                     <th>Expected (PHP)</th>
                     <th>Counted (PHP)</th>
                     <th>Variance (PHP)</th>
@@ -170,7 +173,7 @@ require_once __DIR__ . '/../includes/header.php';
             </thead>
             <tbody>
             <?php if ($sessions): foreach ($sessions as $row): ?>
-                <?php $expected = (float)$row['opening_cash'] + (float)$row['cash_in'] + (float)$row['total_sales'] - (float)$row['cash_out']; ?>
+                <?php $expected = (float)$row['opening_cash'] + (float)$row['cash_in'] + (float)$row['cash_sales'] - (float)$row['cash_out']; ?>
                 <?php $variance = $row['closing_cash'] !== null ? round((float)$row['closing_cash'] - $expected, 2) : null; ?>
                 <tr>
                     <td><?php echo date('M j, Y, g:i A', strtotime($row['started_at'])); ?></td>
@@ -181,12 +184,13 @@ require_once __DIR__ . '/../includes/header.php';
                     <td class="admin-shift-money"><?php echo number_format((float)$row['cash_in'], 2); ?></td>
                     <td class="admin-shift-money"><?php echo number_format((float)$row['cash_out'], 2); ?></td>
                     <td class="admin-shift-money is-sales"><?php echo number_format((float)$row['total_sales'], 2); ?></td>
+                    <td class="admin-shift-money"><?php echo number_format((float)$row['cash_sales'], 2); ?></td>
                     <td class="admin-shift-money is-expected"><?php echo number_format($expected, 2); ?></td>
                     <td class="admin-shift-money"><?php echo $row['closing_cash'] !== null ? number_format((float)$row['closing_cash'], 2) : ((int)($row['auto_closed'] ?? 0) === 1 ? 'Not counted' : '—'); ?></td>
                     <td><?php if ($variance !== null): ?><span class="admin-shift-variance <?php echo $variance < 0 ? 'is-negative' : ($variance > 0 ? 'is-positive' : 'is-balanced'); ?>"><?php echo $variance > 0 ? '+' : ''; ?><?php echo number_format($variance, 2); ?></span><?php else: ?><span class="admin-shift-pending">Awaiting close</span><?php endif; ?></td>
                 </tr>
             <?php endforeach; else: ?>
-                <tr><td colspan="11" class="admin-shift-no-results">No shift records found for these filters.</td></tr>
+                <tr><td colspan="12" class="admin-shift-no-results">No shift records found for these filters.</td></tr>
             <?php endif; ?>
             </tbody>
         </table>

@@ -381,7 +381,7 @@ function populateHistoryTable(movements) {
             <td><strong>${movement.product_name}</strong></td>
             <td><span style="color: ${typeColor}; font-weight: bold;">${typeLabel}</span></td>
             <td>${movement.quantity}</td>
-            <td>₱${parseFloat(movement.cost_price || 0).toFixed(2)}</td>
+            <td>₱${formatMoney(movement.cost_price)}</td>
             <td><code>${movement.batch_reference}</code></td>
         `;
         

@@ -57,7 +57,9 @@ if ($res) {
     error_log('Owner Shift Report cashier lookup failed: ' . $conn->error);
 }
 
-$sql = "SELECT cs.*, u.username
+$sql = "SELECT cs.*, u.username,
+               (SELECT COALESCE(SUM(s.total_price), 0) FROM sales s
+                WHERE s.shift_id = cs.id AND s.payment_method = 'Cash') AS cash_sales
         FROM cashier_sessions cs
         LEFT JOIN users u ON u.id = cs.cashier_id
         WHERE cs.session_date >= ? AND cs.session_date < ?";
@@ -96,7 +98,7 @@ try {
 $summary = ['shifts' => 0, 'open' => 0, 'auto' => 0, 'sales' => 0.0, 'variance' => 0.0, 'short' => 0.0, 'over' => 0.0];
 $byCashier = [];
 foreach ($sessions as $i => $row) {
-    $expected = (float)$row['opening_cash'] + (float)$row['cash_in'] + (float)$row['total_sales'] - (float)$row['cash_out'];
+    $expected = (float)$row['opening_cash'] + (float)$row['cash_in'] + (float)$row['cash_sales'] - (float)$row['cash_out'];
     $variance = $row['closing_cash'] !== null ? round((float)$row['closing_cash'] - $expected, 2) : null;
     $sessions[$i]['_expected'] = $expected;
     $sessions[$i]['_variance'] = $variance;
@@ -136,7 +138,7 @@ if (($_GET['export'] ?? '') === 'csv' && !$loadError) {
     header('Content-Disposition: attachment; filename="shift-report-' . $month . '.csv"');
     $out = fopen('php://output', 'w');
     fwrite($out, "\xEF\xBB\xBF");
-    fputcsv($out, ['Date', 'Started', 'Closed', 'Shift', 'Cashier', 'Status', 'Auto-closed', 'Opening', 'Cash In', 'Cash Out', 'Sales', 'Expected', 'Counted', 'Variance']);
+    fputcsv($out, ['Date', 'Started', 'Closed', 'Shift', 'Cashier', 'Status', 'Auto-closed', 'Opening', 'Cash In', 'Cash Out', 'Sales', 'Cash Sales', 'Expected', 'Counted', 'Variance']);
     foreach ($sessions as $r) {
         fputcsv($out, [
             $r['session_date'],
@@ -150,6 +152,7 @@ if (($_GET['export'] ?? '') === 'csv' && !$loadError) {
             number_format((float)$r['cash_in'], 2, '.', ''),
             number_format((float)$r['cash_out'], 2, '.', ''),
             number_format((float)$r['total_sales'], 2, '.', ''),
+            number_format((float)$r['cash_sales'], 2, '.', ''),
             number_format($r['_expected'], 2, '.', ''),
             $r['closing_cash'] !== null ? number_format((float)$r['closing_cash'], 2, '.', '') : '',
             $r['_variance'] !== null ? number_format($r['_variance'], 2, '.', '') : '',
@@ -287,7 +290,7 @@ require_once __DIR__ . '/../includes/header.php';
 
     <section class="owner-panel">
         <div class="owner-panel-head">
-            <div><h2>Shift activity</h2><p>Expected cash = opening + cash in + sales − cash out.</p></div>
+            <div><h2>Shift activity</h2><p>Expected cash = opening + cash in + cash sales − cash out. Sales includes cashless payments.</p></div>
             <span class="o-count"><?php echo number_format(count($sessions)); ?> record<?php echo count($sessions) === 1 ? '' : 's'; ?></span>
         </div>
         <div class="owner-table-scroll">
@@ -296,7 +299,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <tr>
                         <th>Date</th><th>Shift</th><th>Cashier</th><th>Status</th>
                         <th class="num">Opening</th><th class="num">Cash in</th><th class="num">Cash out</th>
-                        <th class="num">Sales</th><th class="num">Expected</th><th class="num">Counted</th><th class="num">Variance</th>
+                        <th class="num">Sales</th><th class="num">Cash sales</th><th class="num">Expected</th><th class="num">Counted</th><th class="num">Variance</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -321,6 +324,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <td class="num"><?php echo $money($row['cash_in']); ?></td>
                         <td class="num"><?php echo $money($row['cash_out']); ?></td>
                         <td class="num is-strong"><?php echo $money($row['total_sales']); ?></td>
+                        <td class="num"><?php echo $money($row['cash_sales']); ?></td>
                         <td class="num"><?php echo $money($row['_expected']); ?></td>
                         <td class="num"><?php echo $row['closing_cash'] !== null ? $money($row['closing_cash']) : ($auto ? '<span class="o-muted">Not counted</span>' : '<span class="o-muted">—</span>'); ?></td>
                         <td class="num">
@@ -332,7 +336,7 @@ require_once __DIR__ . '/../includes/header.php';
                         </td>
                     </tr>
                 <?php endforeach; else: ?>
-                    <tr><td colspan="11" class="owner-empty">
+                    <tr><td colspan="12" class="owner-empty">
                         <strong><?php echo $loadError ? 'Unable to load shifts.' : 'No shifts found.'; ?></strong>
                         <span><?php echo $loadError ? 'Please try again shortly.' : 'Try another month, or clear the cashier and status filters.'; ?></span>
                     </td></tr>
@@ -343,7 +347,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <tr>
                         <td colspan="7">Totals</td>
                         <td class="num">PHP <?php echo $money($summary['sales']); ?></td>
-                        <td></td><td></td>
+                        <td></td><td></td><td></td>
                         <td class="num"><?php echo $signed($summary['variance']); ?></td>
                     </tr>
                 </tfoot>

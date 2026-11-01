@@ -360,6 +360,22 @@ try {
     }
     $updateSession->close();
 
+    $cashSalesStmt = $conn->prepare("SELECT COALESCE(SUM(total_price), 0) AS cash_sales
+                                     FROM sales
+                                     WHERE shift_id = ? AND payment_method = 'Cash'");
+    if (!$cashSalesStmt) {
+        error_log('[POS] cash sales query preparation failed: ' . $conn->error);
+        throw new Exception('Could not calculate cash sales for the shift.');
+    }
+    $cashSalesStmt->bind_param('i', $sessionId);
+    if (!$cashSalesStmt->execute()) {
+        error_log('[POS] cash sales query failed: ' . $cashSalesStmt->error);
+        $cashSalesStmt->close();
+        throw new Exception('Could not calculate cash sales for the shift.');
+    }
+    $cashSales = (float)$cashSalesStmt->get_result()->fetch_assoc()['cash_sales'];
+    $cashSalesStmt->close();
+
     $conn->commit();
 
     // Auto-restock any retail unit that just dropped to/below its configured
@@ -386,7 +402,11 @@ try {
         'sale_reference' => $saleReference,
         'total' => round($total, 2),
         'payment_method' => $paymentMethod,
-        'shift' => ['id' => (int)$session['id'], 'total_sales' => round($session['total_sales'] + $total, 2)],
+        'shift' => [
+            'id' => (int)$session['id'],
+            'total_sales' => round($session['total_sales'] + $total, 2),
+            'cash_sales' => round($cashSales, 2),
+        ],
         'inventory' => $inventoryUpdates,  // Add live stocks if needed
         'auto_conversions' => $conversionResults
     ]);

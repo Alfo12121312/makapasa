@@ -162,10 +162,15 @@ function ensure_core_schema($conn) {
         attendance_date DATE NOT NULL,
         time_in DATETIME NULL,
         time_out DATETIME NULL,
+        is_late TINYINT(1) NULL DEFAULT NULL,
         total_hours DECIMAL(8,2) NOT NULL DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE KEY uniq_employee_day (employee_id, attendance_date)
     )");
+    $attendanceLateColumn = $conn->query("SHOW COLUMNS FROM attendance LIKE 'is_late'");
+    if ($attendanceLateColumn && $attendanceLateColumn->num_rows === 0) {
+        $conn->query("ALTER TABLE attendance ADD COLUMN is_late TINYINT(1) NULL DEFAULT NULL AFTER time_out");
+    }
 
     $employeeContributionType = $conn->query("SHOW COLUMNS FROM employees LIKE 'contribution_type'");
     if ($employeeContributionType && $employeeContributionType->num_rows === 0) {
@@ -1239,6 +1244,73 @@ function render_sidebar($context, $activePage, $title = null) {
 // compared against Philippine time no matter what time zone the web server or database is set to.
 function app_local_now_str() {
     return (new DateTime('now', new DateTimeZone('Asia/Manila')))->format('Y-m-d H:i:s');
+}
+
+function app_attendance_settings($conn) {
+    $startTime = (string)app_setting($conn, 'attendance_start_time', '08:00');
+    $endTime = (string)app_setting($conn, 'attendance_end_time', '17:00');
+    $graceMinutes = filter_var(app_setting($conn, 'attendance_grace_minutes', '30'), FILTER_VALIDATE_INT);
+    $earlyClockInMinutes = filter_var(app_setting($conn, 'attendance_early_clock_in_minutes', '120'), FILTER_VALIDATE_INT);
+    $lateDeduction = (string)app_setting($conn, 'attendance_late_deduction', '30.00');
+    $validTime = static function ($value) {
+        return preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/D', $value) === 1;
+    };
+
+    if (!$validTime($startTime) || !$validTime($endTime) || $startTime >= $endTime) {
+        $startTime = '08:00';
+        $endTime = '17:00';
+    }
+    if ($graceMinutes === false || $graceMinutes < 0 || $graceMinutes > 240) {
+        $graceMinutes = 30;
+    }
+    if ($earlyClockInMinutes === false || $earlyClockInMinutes < 0 || $earlyClockInMinutes > 720) {
+        $earlyClockInMinutes = 120;
+    }
+    $startMinutes = ((int)substr($startTime, 0, 2) * 60) + (int)substr($startTime, 3, 2);
+    $endMinutes = ((int)substr($endTime, 0, 2) * 60) + (int)substr($endTime, 3, 2);
+    if ($startMinutes + $graceMinutes > $endMinutes) {
+        $graceMinutes = max(0, $endMinutes - $startMinutes);
+    }
+    if (!preg_match('/^\d{1,6}(?:\.\d{1,2})?$/D', $lateDeduction) || (float)$lateDeduction > 100000) {
+        $lateDeduction = '30.00';
+    }
+
+    return [
+        'start_time' => $startTime,
+        'end_time' => $endTime,
+        'grace_minutes' => $graceMinutes,
+        'early_clock_in_minutes' => $earlyClockInMinutes,
+        'late_deduction' => (float)$lateDeduction,
+    ];
+}
+
+function app_attendance_late_threshold(array $settings) {
+    $start = DateTimeImmutable::createFromFormat('!H:i', $settings['start_time'], new DateTimeZone('Asia/Manila'));
+    if (!$start) {
+        throw new RuntimeException('Invalid attendance start time.');
+    }
+    return $start->modify('+' . (int)$settings['grace_minutes'] . ' minutes')->format('H:i:s');
+}
+
+function app_attendance_is_late($nowLocal, array $settings) {
+    return substr((string)$nowLocal, 11, 8) >= app_attendance_late_threshold($settings);
+}
+
+function app_attendance_record_is_late($timeIn, $isLate, array $settings) {
+    if ($isLate !== null) {
+        return (int)$isLate === 1;
+    }
+    return $timeIn !== null && app_attendance_is_late((string)$timeIn, $settings);
+}
+
+function app_attendance_clock_in_allowed($nowLocal, array $settings) {
+    $timezone = new DateTimeZone('Asia/Manila');
+    $now = new DateTimeImmutable($nowLocal, $timezone);
+    $date = $now->format('Y-m-d');
+    $scheduledStart = new DateTimeImmutable($date . ' ' . $settings['start_time'], $timezone);
+    $windowStart = $scheduledStart->modify('-' . (int)$settings['early_clock_in_minutes'] . ' minutes');
+    $windowEnd = new DateTimeImmutable($date . ' ' . $settings['end_time'], $timezone);
+    return $now >= $windowStart && $now <= $windowEnd;
 }
 
 /** Wall-clock string -> number (no time zone involved, so differences between clocks are exact). */

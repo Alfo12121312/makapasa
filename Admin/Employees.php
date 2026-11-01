@@ -16,6 +16,8 @@ require_once __DIR__ . '/../includes/statutory_contributions.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 
 $conn = app_connect();
+$attendanceSettings = app_attendance_settings($conn);
+$lateThreshold = app_attendance_late_threshold($attendanceSettings);
 
 /* employees table schema lives in includes/app.php (bootstrapped on every
    page, including migrations) — not redefined here. */
@@ -206,7 +208,7 @@ require_once __DIR__ . '/../includes/header.php';
             <label for="employee-position">Position</label>
             <input type="text" name="position" id="employee-position" maxlength="80" placeholder="Position" required>
             <label for="daily-rate">Daily rate (PHP)</label>
-            <input type="number" step="0.01" min="0.01" name="daily_rate" id="daily-rate" placeholder="0.00" required>
+            <input type="text" step="0.01" min="0.01" name="daily_rate" id="daily-rate" placeholder="0.00" inputmode="decimal" data-money-input pattern="[0-9,]+(\.[0-9]{1,2})?" required>
             <label for="monthly-salary-preview">Monthly salary (PHP)</label>
             <input type="text" id="monthly-salary-preview" value="PHP 0.00" readonly title="Daily rate multiplied by <?php echo $daysInCurrentMonth; ?> calendar days in the current month" aria-label="Monthly salary (automatic)" data-monthly-preview>
             <p class="salary-hint">Monthly salary equivalent = daily rate × <?php echo $daysInCurrentMonth; ?> calendar days in <?php echo date('F Y'); ?>. This uses every day in the current month, including weekly rest days. Payroll earnings are still based on recorded attendance.</p>
@@ -226,7 +228,7 @@ require_once __DIR__ . '/../includes/header.php';
             <dl class="employee-terms-list">
                 <div><dt>Monthly salary equivalent</dt><dd>The daily rate is multiplied by the calendar-day count for the current month (28–31 days). This is a reference amount; payroll earnings are calculated from approved attendance records.</dd></div>
                 <div><dt>Regular earnings</dt><dd>Recorded hours are paid at the daily rate, up to 8 hours per shift. Incomplete attendance records are not included in payroll calculations.</dd></div>
-                <div><dt>Late attendance</dt><dd>The current system rule applies a PHP 30 deduction for each recorded arrival at or after 8:00 AM.</dd></div>
+                <div><dt>Late attendance</dt><dd>Employees are late when they clock in at or after <?php echo date('g:i A', strtotime($lateThreshold)); ?> (<?php echo (int)$attendanceSettings['grace_minutes']; ?>-minute grace after the <?php echo date('g:i A', strtotime($attendanceSettings['start_time'])); ?> start). Payroll deducts PHP <?php echo number_format($attendanceSettings['late_deduction'], 2); ?> per late attendance.</dd></div>
                 <div><dt>SSS contribution</dt><dd>The current calculation uses a 5% employee share and a 10% employer share of the computed monthly salary credit, capped at PHP 35,000.</dd></div>
                 <div><dt>PhilHealth contribution</dt><dd>The current calculation uses 2.5% of the monthly salary equivalent for the employee and 2.5% for the employer.</dd></div>
                 <div><dt>Pag-IBIG contribution</dt><dd>The current employee share is 1% for monthly salary equivalents up to PHP 1,500 and 2% above that amount. The employer share is 2%; the calculation base is capped at PHP 10,000.</dd></div>
@@ -307,7 +309,7 @@ require_once __DIR__ . '/../includes/header.php';
             <label for="edit-employee-position">Position</label>
             <input type="text" name="position" id="edit-employee-position" maxlength="80" required>
             <label for="edit-daily-rate">Daily rate (PHP)</label>
-            <input type="number" name="daily_rate" id="edit-daily-rate" min="0.01" step="0.01" required>
+            <input type="text" name="daily_rate" id="edit-daily-rate" min="0.01" step="0.01" inputmode="decimal" data-money-input pattern="[0-9,]+(\.[0-9]{1,2})?" required>
             <label for="edit-monthly-salary-preview">Monthly salary (PHP)</label>
             <input type="text" id="edit-monthly-salary-preview" value="PHP 0.00" readonly data-monthly-preview>
             <p class="salary-hint">Monthly salary equivalent is recalculated using this month's full calendar-day count when the profile is saved.</p>
@@ -324,7 +326,7 @@ require_once __DIR__ . '/../includes/header.php';
         <form method="post" id="cash-advance-form">
             <input type="hidden" name="employee_id" id="cash-advance-employee-id" value="">
             <label for="cash-advance-amount">Amount (PHP)</label>
-            <input type="number" step="0.01" min="0.01" name="cash_advance_amount" id="cash-advance-amount" required>
+            <input type="text" step="0.01" min="0.01" name="cash_advance_amount" id="cash-advance-amount" inputmode="decimal" data-money-input pattern="[0-9,]+(\.[0-9]{1,2})?" required>
             <button type="submit" name="cash_advance_submit" class="status-btn">Confirm Cash Advance</button>
             <button type="button" class="deactivate-btn" id="cash-advance-cancel">Cancel</button>
         </form>
@@ -359,7 +361,8 @@ require_once __DIR__ . '/../includes/header.php';
     function bindMonthlySalaryPreview(rateInput, previewInput) {
         if (!rateInput || !previewInput) { return; }
         var updatePreview = function() {
-            var monthly = (parseFloat(rateInput.value) || 0) * daysInMonth;
+            var dailyRate = parseFloat(String(rateInput.value).replace(/,/g, ''));
+            var monthly = (isFinite(dailyRate) ? dailyRate : 0) * daysInMonth;
             previewInput.value = 'PHP ' + monthly.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
         };
         rateInput.addEventListener('input', updatePreview);
@@ -436,7 +439,7 @@ require_once __DIR__ . '/../includes/header.php';
             var employeeName = this.dataset.employeeName;
             var salary = parseFloat(this.dataset.currentSalary || '0');
             document.getElementById('cash-advance-employee-name').textContent = employeeName;
-            document.getElementById('cash-advance-available-salary').textContent = 'PHP ' + salary.toFixed(2);
+            document.getElementById('cash-advance-available-salary').textContent = 'PHP ' + formatMoney(salary);
             document.getElementById('cash-advance-employee-id').value = employeeId;
             document.getElementById('cash-advance-amount').value = '';
             document.getElementById('cash-advance-panel').hidden = false;

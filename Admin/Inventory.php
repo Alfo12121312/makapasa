@@ -1053,14 +1053,14 @@ require_once __DIR__ . '/../includes/header.php';
                     <div class="inv-field">
                         <label for="stock_in_retail_price">Retail price <span class="req">*</span></label>
                         <div class="inv-prefix"><span>₱</span>
-                            <input type="number" id="stock_in_retail_price" name="stock_in_retail_price" step="0.01" min="0" inputmode="decimal" placeholder="0.00">
+                            <input type="text" id="stock_in_retail_price" name="stock_in_retail_price" step="0.01" min="0" inputmode="decimal" data-money-input pattern="[0-9,]+(\.[0-9]{1,2})?" placeholder="0.00">
                         </div>
                         <div class="inv-error" id="err_si_retail">Enter the retail price (0 or more).</div>
                     </div>
                     <div class="inv-field">
                         <label for="stock_in_cost_price">Cost price <span class="req">*</span></label>
                         <div class="inv-prefix"><span>₱</span>
-                            <input type="number" id="stock_in_cost_price" name="stock_in_cost_price" step="0.01" min="0" inputmode="decimal" placeholder="0.00">
+                            <input type="text" id="stock_in_cost_price" name="stock_in_cost_price" step="0.01" min="0" inputmode="decimal" data-money-input pattern="[0-9,]+(\.[0-9]{1,2})?" placeholder="0.00">
                         </div>
                         <div class="inv-error" id="err_si_cost">Enter the cost price (0 or more).</div>
                     </div>
@@ -1258,7 +1258,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <div class="inv-grid" id="cv_price_wrap" style="display:none;">
                     <div class="inv-field">
                         <label for="cv_new_price">Selling price per <span id="cv_price_unit">unit</span> <span class="req">*</span></label>
-                        <div class="inv-prefix"><span>₱</span><input type="number" id="cv_new_price" name="convert_new_price" min="0" step="0.01" placeholder="0.00"></div>
+                        <div class="inv-prefix"><span>₱</span><input type="text" id="cv_new_price" name="convert_new_price" min="0" step="0.01" inputmode="decimal" data-money-input pattern="[0-9,]+(\.[0-9]{1,2})?" placeholder="0.00"></div>
                         <div class="inv-toolbar-note">There is no row for this unit yet, so one will be created with this price.</div>
                         <div class="inv-error" id="err_cv_price">Enter the selling price for the new unit.</div>
                     </div>
@@ -1702,8 +1702,8 @@ require_once __DIR__ . '/../includes/header.php';
         }
 
         var qty = parseFloat($('stock_in_quantity').value);
-        var retailVal = parseFloat($('stock_in_retail_price').value);
-        var costVal = parseFloat($('stock_in_cost_price').value);
+        var retailVal = parseMoney($('stock_in_retail_price').value);
+        var costVal = parseMoney($('stock_in_cost_price').value);
         qty = isNaN(qty) || qty < 0 ? 0 : qty;
 
         $('siTotalCost').textContent = peso(qty * (isNaN(costVal) ? 0 : costVal));
@@ -1773,8 +1773,8 @@ require_once __DIR__ . '/../includes/header.php';
         var siKg = ['kg','kgs','kls','kilo','kilos','kilogram','kilograms'].indexOf(String($('stock_in_unit').value).toLowerCase().replace(/[\s.]+/g, '')) !== -1;
         var qtyBad = qtyRaw === '' || isNaN(qty) || qty <= 0 || (!siKg && !Number.isInteger(qty));
         var retailRaw = $('stock_in_retail_price').value.trim(), costRaw = $('stock_in_cost_price').value.trim();
-        var retailBad = retailRaw === '' || isNaN(Number(retailRaw)) || Number(retailRaw) < 0;
-        var costBad = costRaw === '' || isNaN(Number(costRaw)) || Number(costRaw) < 0;
+        var retailBad = retailRaw === '' || parseMoney(retailRaw) < 0;
+        var costBad = costRaw === '' || parseMoney(costRaw) < 0;
         var exp = $('stock_in_expiration').value;
         var expBad = exp !== '' && exp < todayStr();
         var unitBad = !$('stock_in_unit').value;
@@ -1791,7 +1791,7 @@ require_once __DIR__ . '/../includes/header.php';
         if (costBad) problems.push('Cost price is required.');
         if (expBad) problems.push('Expiration date cannot be in the past.');
 
-        if (!problems.length && Number(retailRaw) < Number(costRaw) &&
+        if (!problems.length && parseMoney(retailRaw) < parseMoney(costRaw) &&
             !window.confirm('The retail price is lower than the cost price, so you would sell at a loss. Continue anyway?')) {
             e.preventDefault();
             return;
@@ -1977,7 +1977,7 @@ require_once __DIR__ . '/../includes/header.php';
 
         var qtyBad = !($('cv_qty').value.trim() !== '' && qty > 0) || qty > cv.qty + 0.0005 || (!srcKg && !Number.isInteger(qty));
         var factorBad = !($('cv_factor').value.trim() !== '' && factor > 0) || (!toKg && Math.abs(factor - Math.round(factor)) > 0.0005);
-        var priceBad = !target && !(Number($('cv_new_price').value) > 0);
+        var priceBad = !target && !(parseMoney($('cv_new_price').value) > 0);
 
         flag('cv_qty', 'err_cv_qty', qtyBad);
         flag('cv_factor', 'err_cv_factor', factorBad);

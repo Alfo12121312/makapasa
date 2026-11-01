@@ -153,7 +153,7 @@ require_once __DIR__ . '/../includes/header.php';
                         </select>
                     </label>
                     <label>Value
-                        <input type="number" step="0.01" min="0.01" name="discount_value" placeholder="0.00" required>
+                        <input type="number" step="0.01" min="0.01" name="discount_value" inputmode="decimal" pattern="[0-9,]+(\.[0-9]{1,2})?" placeholder="0.00" required>
                     </label>
                 </div>
                 <label>Applies to
@@ -252,6 +252,24 @@ require_once __DIR__ . '/../includes/header.php';
 </main>
 <script>
 (function () {
+    var discountType = document.querySelector('[name="discount_type"]');
+    var discountValue = document.querySelector('[name="discount_value"]');
+    if (discountType && discountValue) {
+        function syncDiscountValueFormatting() {
+            if (discountType.value === 'fixed') {
+                discountValue.value = discountValue.value.replace(/,/g, '');
+                discountValue.type = 'text';
+                discountValue.setAttribute('data-money-input', '');
+                discountValue.dispatchEvent(new Event('input', { bubbles: true }));
+            } else {
+                discountValue.value = discountValue.value.replace(/,/g, '');
+                discountValue.removeAttribute('data-money-input');
+                discountValue.type = 'number';
+            }
+        }
+        discountType.addEventListener('change', syncDiscountValueFormatting);
+        syncDiscountValueFormatting();
+    }
     var scope = document.getElementById('discountScope');
     var product = document.getElementById('discountProduct');
     if (scope && product) {

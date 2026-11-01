@@ -90,10 +90,100 @@ function updateTransferButtonLabel() {
 }
 
 /* ---------- POS state and discount calculations ---------- */
-// Money formatting for the POS screen: 12,345.60
-function posMoney(value) {
+// Display currency consistently across cashier and admin screens: 12,345.60
+function formatMoney(value) {
     return (Number(value) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+
+function parseMoney(value) {
+    const amount = Number(String(value || '').replace(/,/g, '').trim());
+    return Number.isFinite(amount) ? amount : 0;
+}
+
+function formatMoneyInput(input) {
+    const value = input.value;
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const prefixStart = value.slice(0, start);
+    const prefixEnd = value.slice(0, end);
+    const cleaned = value.replace(/[^\d.]/g, '');
+    const decimalIndex = cleaned.indexOf('.');
+    let integer = decimalIndex === -1 ? cleaned : cleaned.slice(0, decimalIndex);
+    const decimals = decimalIndex === -1 ? '' : cleaned.slice(decimalIndex + 1).replace(/\./g, '').slice(0, 2);
+    if (decimalIndex !== -1 && integer === '') integer = '0';
+    integer = integer.replace(/^0+(?=\d)/, '');
+    integer = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    input.value = integer + (decimalIndex === -1 ? '' : '.' + decimals);
+
+    function cursorAt(prefix) {
+        const digitsBefore = (prefix.match(/\d/g) || []).length;
+        const decimalIndexBefore = prefix.indexOf('.');
+        const decimalDigitsBefore = decimalIndexBefore === -1
+            ? 0
+            : (prefix.slice(decimalIndexBefore + 1).match(/\d/g) || []).length;
+        let position = 0;
+        let digitsSeen = 0;
+        while (position < input.value.length && digitsSeen < digitsBefore) {
+            if (/\d/.test(input.value[position])) digitsSeen++;
+            position++;
+        }
+        if (decimalIndexBefore !== -1) {
+            const decimalPosition = input.value.indexOf('.');
+            if (decimalPosition !== -1) position = decimalPosition + 1 + decimalDigitsBefore;
+        }
+        return position;
+    }
+
+    if (start !== null && end !== null) {
+        input.setSelectionRange(cursorAt(prefixStart), cursorAt(prefixEnd));
+    }
+}
+
+document.addEventListener('input', function (event) {
+    const input = event.target;
+    if (input instanceof HTMLInputElement && input.matches('[data-money-input]')) {
+        formatMoneyInput(input);
+        input.setCustomValidity('');
+    } else {
+        document.querySelectorAll('[data-money-input]').forEach(function (moneyInput) {
+            moneyInput.setCustomValidity('');
+        });
+    }
+});
+
+document.addEventListener('focus', function (event) {
+    const input = event.target;
+    if (input instanceof HTMLInputElement && input.matches('[data-money-input]')) {
+        formatMoneyInput(input);
+    }
+}, true);
+
+document.addEventListener('submit', function (event) {
+    const moneyInputs = event.target.querySelectorAll('[data-money-input]');
+    let firstInvalidInput = null;
+    moneyInputs.forEach(function (input) {
+        input.setCustomValidity('');
+        if (input.value.trim() === '') return;
+        const amount = parseMoney(input.value);
+        const min = input.getAttribute('min');
+        const max = input.getAttribute('max');
+        if (min !== null && amount < Number(min)) {
+            input.setCustomValidity('Enter an amount of at least ' + formatMoney(min) + '.');
+            firstInvalidInput = firstInvalidInput || input;
+        } else if (max !== null && amount > Number(max)) {
+            input.setCustomValidity('Enter an amount no greater than ' + formatMoney(max) + '.');
+            firstInvalidInput = firstInvalidInput || input;
+        }
+    });
+    if (firstInvalidInput) {
+        event.preventDefault();
+        firstInvalidInput.reportValidity();
+        return;
+    }
+    moneyInputs.forEach(function (input) {
+        input.value = input.value.replace(/,/g, '').trim();
+    });
+}, true);
 
 let cart = [];
 let total = 0;
@@ -320,7 +410,7 @@ function setCartAmount(index, value) {
     if (quantity > stock + 0.0001) {
         quantity = Math.floor(stock * 1000) / 1000;
         delete item.amount;   // capped by stock: price it as a normal quantity line
-        setPosFeedback(`Only ${formatQty(stock)} kg in stock (about PHP ${posMoney(roundMoney(quantity * item.price))}). Quantity set to ${formatQty(quantity)} kg.`, 'error');
+        setPosFeedback(`Only ${formatQty(stock)} kg in stock (about PHP ${formatMoney(roundMoney(quantity * item.price))}). Quantity set to ${formatQty(quantity)} kg.`, 'error');
         if (quantity <= 0) {
             removeFromCart(index);
             return;
@@ -447,7 +537,7 @@ function updateCart() {
             lineTotal.className = 'pos-line-total pos-line-total-input';
             lineTotal.inputMode = 'decimal';
             lineTotal.autocomplete = 'off';
-            lineTotal.value = posMoney(itemTotal);
+            lineTotal.value = formatMoney(itemTotal);
             lineTotal.title = 'Type an amount in PHP to set the kilos';
             lineTotal.setAttribute('aria-label', 'Amount in PHP for ' + item.name + ' (changes the kilos)');
             lineTotal.addEventListener('focus', event => event.target.select());
@@ -458,14 +548,14 @@ function updateCart() {
                     event.target.blur();
                 } else if (event.key === 'Escape') {
                     event.preventDefault();
-                    event.target.value = posMoney(itemTotal);
+                    event.target.value = formatMoney(itemTotal);
                     event.target.blur();
                 }
             });
         } else {
             lineTotal = document.createElement('span');
             lineTotal.className = 'pos-line-total';
-            lineTotal.textContent = posMoney(itemTotal);
+            lineTotal.textContent = formatMoney(itemTotal);
         }
 
         main.appendChild(itemName);
@@ -515,7 +605,7 @@ function updateCart() {
 
         const unitPrice = document.createElement('span');
         unitPrice.className = 'pos-line-unit';
-        unitPrice.textContent = '\u00d7 ' + posMoney(item.price) + (item.unit ? ' / ' + (isWeighedUnit(item.unit) ? 'kg' : item.unit) : '');
+        unitPrice.textContent = '\u00d7 ' + formatMoney(item.price) + (item.unit ? ' / ' + (isWeighedUnit(item.unit) ? 'kg' : item.unit) : '');
 
         const removeButton = document.createElement('button');
         removeButton.type = 'button';
@@ -538,7 +628,7 @@ function updateCart() {
             const promoName = document.createElement('span');
             promoName.textContent = promoLabel;
             const promoAmount = document.createElement('span');
-            promoAmount.textContent = '\u2212' + posMoney(itemDiscountTotal);
+            promoAmount.textContent = '\u2212' + formatMoney(itemDiscountTotal);
             promo.appendChild(promoName);
             promo.appendChild(promoAmount);
             cartItem.appendChild(promo);
@@ -547,9 +637,9 @@ function updateCart() {
         cartItems.appendChild(cartItem);
     });
 
-    if (subtotalEl) subtotalEl.textContent = `PHP ${posMoney(subtotal)}`;
-    if (totalDiscountEl) totalDiscountEl.textContent = `PHP ${posMoney(totalDiscount)}`;
-    cartTotal.textContent = `PHP ${posMoney(total)}`;
+    if (subtotalEl) subtotalEl.textContent = `PHP ${formatMoney(subtotal)}`;
+    if (totalDiscountEl) totalDiscountEl.textContent = `PHP ${formatMoney(totalDiscount)}`;
+    cartTotal.textContent = `PHP ${formatMoney(total)}`;
     if (proceedBtn) proceedBtn.disabled = cart.length === 0 || !window.sessionOpen;
     const voidBtn = document.getElementById('void-btn');
     if (voidBtn) voidBtn.disabled = cart.length === 0;
@@ -663,7 +753,7 @@ function renderDiscountOptions(discounts) {
         const span = document.createElement('span');
         const detailText = discount.discount_type === 'percentage'
             ? `${Number(discount.discount_value)}% off`
-            : `PHP ${Number(discount.discount_value).toFixed(2)} off`;
+            : `PHP ${formatMoney(discount.discount_value)} off`;
 
         const scopeText = (discount.scope || 'order') === 'product' ? 'product only' : 'order-wide';
         const minQty = Number(discount.min_qty || 1);
@@ -772,7 +862,7 @@ function setPaymentMethod(method) {
         calculateChange();
     } else {
         // Cashless = exact amount, nothing to count or give back.
-        if (amountReceived) amountReceived.value = total.toFixed(2);
+        if (amountReceived) amountReceived.value = formatMoney(total);
         if (confirmBtn) confirmBtn.disabled = false;
         if (reference) reference.focus();
     }
@@ -799,7 +889,7 @@ function proceedOrder() {
     const changeAmount = document.getElementById('change-amount');
     const confirmBtn = document.querySelector('.pos-confirm-sale');
     const modal = document.getElementById('transaction-modal');
-    if (totalEl) totalEl.textContent = `PHP ${posMoney(total)}`;
+    if (totalEl) totalEl.textContent = `PHP ${formatMoney(total)}`;
     if (amountReceived) amountReceived.value = '';
     if (changeAmount) { changeAmount.textContent = 'PHP 0.00'; }
     if (confirmBtn) confirmBtn.disabled = true;
@@ -825,14 +915,14 @@ function calculateChange() {
     const confirmBtn = document.querySelector('.pos-confirm-sale');
     if (!amountReceived || !changeAmount) return;
     if (paymentMethod !== 'Cash') return; // cashless payments are always exact
-    const received = parseFloat(amountReceived.value) || 0;
+    const received = parseMoney(amountReceived.value);
     // Work in centavos so 0.1 + 0.2 style float noise never blocks an exact payment.
     const changeCents = Math.round(received * 100) - Math.round(total * 100);
     const change = changeCents / 100;
     const short = changeCents < 0;
     const label = document.getElementById('change-label');
     if (label) label.textContent = short ? 'Still owed' : 'Change';
-    changeAmount.textContent = `PHP ${posMoney(Math.abs(change))}`;
+    changeAmount.textContent = `PHP ${formatMoney(Math.abs(change))}`;
     const box = changeAmount.parentElement;
     if (box) {
         box.classList.toggle('is-short', short && received > 0);
@@ -895,7 +985,7 @@ function confirmTransaction() {
     }
     const amountReceived = document.getElementById('amount-received');
     const isCash = paymentMethod === 'Cash';
-    const received = isCash ? (amountReceived ? parseFloat(amountReceived.value) || 0 : 0) : total;
+    const received = isCash ? (amountReceived ? parseMoney(amountReceived.value) : 0) : total;
     if (isCash && Math.round(received * 100) < Math.round(total * 100)) {
         setPosFeedback('Amount received is less than the total.', 'error');
         return;
@@ -956,18 +1046,20 @@ function confirmTransaction() {
                 applyInventorySnapshot(normalized);
             }
             const shiftValue = document.getElementById('shift-sales-value');
-            if (shiftValue && data.shift) {
+            if (data.shift) {
                 const salesTotal = Number(data.shift.total_sales);
-                shiftValue.textContent = `PHP ${posMoney(salesTotal)}`;
+                if (shiftValue) {
+                    shiftValue.textContent = `PHP ${formatMoney(salesTotal)}`;
+                }
                 const endShiftSales = document.getElementById('end-shift-sales');
                 if (endShiftSales) {
                     endShiftSales.textContent = `PHP ${salesTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
                 }
-                const expectedCash = document.getElementById('expected-closing-cash');
-                if (expectedCash && Number.isFinite(Number(window.shiftExpectedBase))) {
-                    const expectedBase = Number(window.shiftExpectedBase) + salesTotal;
-                    expectedCash.dataset.base = expectedBase.toFixed(2);
-                    expectedCash.textContent = `PHP ${expectedBase.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                if (Number.isFinite(Number(data.shift.cash_sales))) {
+                    window.shiftCashSales = Number(data.shift.cash_sales);
+                    if (typeof window.updateShiftExpectedCash === 'function') {
+                        window.updateShiftExpectedCash();
+                    }
                 }
             }
             cancelOrder();

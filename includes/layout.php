@@ -142,6 +142,7 @@ function render_app_close(array $opts = []) {
     $extraJs = $opts['extra_js'] ?? '';
     $scriptVersion = filemtime(__DIR__ . '/../script.js');
     echo '</div>' . "\n";
+    echo '<script src="' . htmlspecialchars($root . 'script.js?v=' . $scriptVersion, ENT_QUOTES, 'UTF-8') . '"></script>' . "\n";
     echo $extraJs;
     // Keeps this device's slot alive while the page is open, and returns to login if the slot was lost.
     $pingUrl = $root . 'api/session_ping.php';
@@ -296,6 +297,5 @@ document.addEventListener('visibilitychange',function(){if(!document.hidden){ref
 })();</script>
 
 LIVEJS;
-    echo '<script src="' . htmlspecialchars($root . 'script.js?v=' . $scriptVersion, ENT_QUOTES, 'UTF-8') . '"></script>' . "\n";
     echo '</body></html>' . "\n";
 }

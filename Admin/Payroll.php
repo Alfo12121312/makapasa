@@ -17,6 +17,8 @@ require_once __DIR__ . '/../includes/statutory_contributions.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 
 $conn = app_connect();
+$attendanceSettings = app_attendance_settings($conn);
+$lateThreshold = app_attendance_late_threshold($attendanceSettings);
 
 // Input and period selection
 $requestedMonth = (string)($_GET['month'] ?? '');
@@ -45,7 +47,7 @@ $payrollSql = "SELECT e.id AS employee_id, e.employee_code, e.full_name, e.posit
                           SUM(CASE WHEN time_out IS NOT NULL AND total_hours >= 8 THEN 1 ELSE 0 END) AS full_days,
                           SUM(CASE WHEN time_out IS NOT NULL AND total_hours > 0 AND total_hours < 8 THEN 1 ELSE 0 END) AS partial_days,
                           SUM(CASE WHEN time_out IS NOT NULL THEN LEAST(total_hours, 8) ELSE 0 END) AS paid_hours,
-                          SUM(CASE WHEN time_out IS NOT NULL AND TIME(time_in) >= '08:00:00' THEN 1 ELSE 0 END) AS late_count,
+                          SUM(CASE WHEN time_out IS NOT NULL AND COALESCE(is_late, TIME(time_in) >= ?) THEN 1 ELSE 0 END) AS late_count,
                           SUM(CASE WHEN time_in IS NOT NULL AND time_out IS NULL THEN 1 ELSE 0 END) AS open_shifts
                    FROM attendance
                    WHERE attendance_date BETWEEN ? AND ?
@@ -63,7 +65,7 @@ $payrollSql = "SELECT e.id AS employee_id, e.employee_code, e.full_name, e.posit
 
 // Data loading and payroll calculations
 $stmt = $conn->prepare($payrollSql);
-$stmt->bind_param("ssss", $periodStart, $periodEnd, $periodStart, $periodEnd);
+$stmt->bind_param("sssss", $lateThreshold, $periodStart, $periodEnd, $periodStart, $periodEnd);
 $stmt->execute();
 $payroll = $stmt->get_result();
 $stmt->close();
@@ -85,7 +87,7 @@ while ($payroll && $row = $payroll->fetch_assoc()) {
     $partialDays = (int)$row['partial_days'];
     $paidHours = (float)$row['paid_hours'];
     $salaryGross = round(($paidHours / 8) * (float)$row['daily_rate'], 2);
-    $lateDeduction = ((float)$row['late_count']) * 30.00;
+    $lateDeduction = ((float)$row['late_count']) * $attendanceSettings['late_deduction'];
     $monthlyShares = calculate_statutory_shares((float)$row['monthly_salary']);
     $employeeSss = statutory_share_for_cutoff($monthlyShares['sss_employee'], $cutoff);
     $employeePhilHealth = statutory_share_for_cutoff($monthlyShares['philhealth_employee'], $cutoff);

@@ -27,7 +27,9 @@ $shiftAutoLabel = $shiftAutoCfg['enabled'] ? shift_time_label($shiftAutoCfg['tim
 /* A cashier can work several shifts a day. The "current" shift is their OPEN one (found by status, not by
    date, so a shift that runs past midnight can still be closed); with none open, today's latest shift. */
 function pos_load_session(mysqli $conn, int $cashierId, string $today) {
-    $cols = "id, opening_cash, cash_in, cash_out, total_sales, status, started_at, session_date, shift_label";
+    $cols = "id, opening_cash, cash_in, cash_out, total_sales, status, started_at, session_date, shift_label,
+             (SELECT COALESCE(SUM(s.total_price), 0) FROM sales s
+              WHERE s.shift_id = cashier_sessions.id AND s.payment_method = 'Cash') AS cash_sales";
     $stmt = $conn->prepare("SELECT {$cols} FROM cashier_sessions
                             WHERE cashier_id = ? AND status = 'Open'
                             ORDER BY started_at DESC, id DESC LIMIT 1");
@@ -274,7 +276,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['end_day'])) {
 }
 
 $expectedDrawerCash = $session
-    ? (float)$session['opening_cash'] + (float)$session['cash_in'] + (float)$session['total_sales'] - (float)$session['cash_out']
+    ? (float)$session['opening_cash'] + (float)$session['cash_in'] + (float)$session['cash_sales'] - (float)$session['cash_out']
     : 0.0;
 
 // Load discounts, store settings, and catalog data
@@ -450,7 +452,7 @@ render_app_open([
                                 </select>
                             </label>
                             <label>Amount (PHP)
-                                <input type="number" name="movement_amount[]" class="cash-movement-amount" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00">
+                                <input type="text" name="movement_amount[]" class="cash-movement-amount" min="0.01" step="0.01" inputmode="decimal" data-money-input pattern="[0-9,]+(\.[0-9]{1,2})?" placeholder="0.00">
                             </label>
                             <label>Reason
                                 <input type="text" name="movement_reason[]" maxlength="255" placeholder="e.g. Cash added for change">
@@ -463,11 +465,12 @@ render_app_open([
                     <span>Additional cash in <strong id="cash-movement-in-total">PHP 0.00</strong></span>
                     <span>Additional cash out <strong id="cash-movement-out-total">PHP 0.00</strong></span>
                 </div>
-                <!-- <dl class="pos-recon pos-recon-expected">
+                <dl class="pos-recon pos-recon-expected">
+                    <div><dt>Cash sales</dt><dd id="end-shift-cash-sales">PHP <?php echo number_format((float)($session['cash_sales'] ?? 0), 2); ?></dd></div>
                     <div class="is-total"><dt>Expected drawer cash</dt><dd id="expected-closing-cash" data-base="<?php echo htmlspecialchars(number_format($expectedDrawerCash, 2, '.', ''), ENT_QUOTES, 'UTF-8'); ?>">PHP <?php echo number_format($expectedDrawerCash, 2); ?></dd></div>
-                </dl> -->
+                </dl>
                 <label for="closing-cash">Counted closing cash (PHP)</label>
-                <input type="number" id="closing-cash" name="closing_cash" step="0.01" min="0" placeholder="0.00" inputmode="decimal" required>
+                <input type="text" id="closing-cash" name="closing_cash" step="0.01" min="0" inputmode="decimal" data-money-input pattern="[0-9,]+(\.[0-9]{1,2})?" placeholder="0.00" required>
                 <div class="pos-dialog-actions">
                     <button type="button" class="pos-btn pos-btn-ghost" onclick="closeEndShiftModal()">Cancel</button>
                     <button type="submit" name="end_day" class="pos-btn pos-btn-danger">Confirm end shift</button>
@@ -500,7 +503,7 @@ render_app_open([
                     </select>
                 <?php endif; ?>
                 <label for="opening-cash">Opening cash (PHP)</label>
-                <input type="number" id="opening-cash" step="0.01" min="0" name="opening_cash" placeholder="0.00" inputmode="decimal" required autofocus>
+                <input type="text" id="opening-cash" step="0.01" min="0" name="opening_cash" placeholder="0.00" inputmode="decimal" data-money-input pattern="[0-9,]+(\.[0-9]{1,2})?" required autofocus>
                 <div class="pos-quick-row" aria-label="Quick amounts">
                     <?php foreach ([500, 1000, 2000, 5000] as $amt): ?>
                         <button type="button" class="pos-chip" data-fill="#opening-cash" data-amount="<?php echo $amt; ?>"><?php echo number_format($amt); ?></button>
@@ -672,7 +675,7 @@ render_app_open([
             </div>
             <div id="cash-fields">
             <label for="amount-received" class="pos-field-label">Amount received</label>
-            <input type="number" id="amount-received" class="pos-money-input" step="0.01" min="0" placeholder="0.00" inputmode="decimal" oninput="calculateChange()">
+            <input type="text" id="amount-received" class="pos-money-input" step="0.01" min="0" placeholder="0.00" inputmode="decimal" data-money-input pattern="[0-9,]+(\.[0-9]{1,2})?" oninput="calculateChange()">
             <div class="pos-quick-row" id="quick-tender">
                 <button type="button" class="pos-chip" data-tender="exact">Exact</button>
                 <button type="button" class="pos-chip" data-tender="50">50</button>
@@ -725,6 +728,7 @@ window.processSaleUrl = '../api/process_sale.php';
 window.csrfToken = <?php echo json_encode(csrf_token()); ?>;
 window.agrivetShiftId = <?php echo $sessionOpen ? (int)$session['id'] : 'null'; ?>;
 window.shiftExpectedBase = <?php echo $sessionOpen ? json_encode((float)$session['opening_cash'] + (float)$session['cash_in'] - (float)$session['cash_out']) : '0'; ?>;
+window.shiftCashSales = <?php echo $sessionOpen ? json_encode((float)$session['cash_sales']) : '0'; ?>;
 </script>
 <script>
 (function () {
@@ -740,12 +744,23 @@ window.shiftExpectedBase = <?php echo $sessionOpen ? json_encode((float)$session
         var cashIn = 0;
         var cashOut = 0;
         list.querySelectorAll('.pos-cash-movement-row').forEach(function (row) {
-            var amount = parseFloat(row.querySelector('.cash-movement-amount').value) || 0;
+            var amount = parseMoney(row.querySelector('.cash-movement-amount').value);
                 if (row.querySelector('.cash-movement-type').value === 'in') cashIn += amount;
                 else cashOut += amount;
         });
         cashInDisplay.textContent = 'PHP ' + cashIn.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         cashOutDisplay.textContent = 'PHP ' + cashOut.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        var expectedCash = document.getElementById('expected-closing-cash');
+        var cashSalesDisplay = document.getElementById('end-shift-cash-sales');
+        var cashSales = Number(window.shiftCashSales) || 0;
+        if (cashSalesDisplay) {
+            cashSalesDisplay.textContent = 'PHP ' + cashSales.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        if (expectedCash) {
+            var expected = Number(window.shiftExpectedBase) + cashSales + cashIn - cashOut;
+            expectedCash.dataset.base = expected.toFixed(2);
+            expectedCash.textContent = 'PHP ' + expected.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
     }
 
     function bindRow(row) {
@@ -766,6 +781,8 @@ window.shiftExpectedBase = <?php echo $sessionOpen ? json_encode((float)$session
     }
 
     bindRow(list.querySelector('.pos-cash-movement-row'));
+    window.updateShiftExpectedCash = updateExpectedCash;
+    updateExpectedCash();
     addButton.addEventListener('click', function () {
         var rows = list.querySelectorAll('.pos-cash-movement-row');
         if (rows.length >= movementRowLimit) {

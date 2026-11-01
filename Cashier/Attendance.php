@@ -10,6 +10,11 @@ $conn = app_connect();
 // Attendance is stamped in store time (Asia/Manila), not the database server's clock, which may run on UTC.
 $nowLocal = app_local_now_str();
 $today = substr($nowLocal, 0, 10);
+$attendanceSettings = app_attendance_settings($conn);
+$clockInAllowed = app_attendance_clock_in_allowed($nowLocal, $attendanceSettings);
+$clockInOpensAt = (new DateTimeImmutable($today . ' ' . $attendanceSettings['start_time'], new DateTimeZone('Asia/Manila')))
+    ->modify('-' . $attendanceSettings['early_clock_in_minutes'] . ' minutes');
+$lateThreshold = app_attendance_late_threshold($attendanceSettings);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_csrf();
@@ -22,25 +27,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (isset($_POST['time_in'])) {
-        $stmt = $conn->prepare("INSERT INTO attendance (employee_id, attendance_date, time_in)
-                                SELECT id, ?, ? FROM employees
-                                WHERE id = ? AND status = 'Active'
-                                ON DUPLICATE KEY UPDATE time_in = IF(time_in IS NULL, VALUES(time_in), time_in)");
-        if (!$stmt) {
-            error_log('Cashier attendance time-in prepare failed: ' . $conn->error);
-            flash_error('Could not record time-in. Please try again.');
+        if (!$clockInAllowed) {
+            flash_error('Time-in is allowed from ' . $clockInOpensAt->format('g:i A') . ' through ' . date('g:i A', strtotime($attendanceSettings['end_time'])) . '.');
         } else {
-            $stmt->bind_param('ssi', $today, $nowLocal, $employeeId);
-            $executed = $stmt->execute();
-            if ($executed && $stmt->affected_rows > 0) {
-                flash_success('Time-in recorded successfully.');
-            } elseif (!$executed) {
-                error_log('Cashier attendance time-in failed: ' . $stmt->error);
+            $isLate = app_attendance_is_late($nowLocal, $attendanceSettings) ? 1 : 0;
+            $stmt = $conn->prepare("INSERT INTO attendance (employee_id, attendance_date, time_in, is_late)
+                                    SELECT id, ?, ?, ? FROM employees
+                                    WHERE id = ? AND status = 'Active'
+                                    ON DUPLICATE KEY UPDATE
+                                        is_late = IF(time_in IS NULL, VALUES(is_late), is_late),
+                                        time_in = IF(time_in IS NULL, VALUES(time_in), time_in)");
+            if (!$stmt) {
+                error_log('Cashier attendance time-in prepare failed: ' . $conn->error);
                 flash_error('Could not record time-in. Please try again.');
             } else {
-                flash_error('This employee has already clocked in today or is no longer active.');
+                $stmt->bind_param('ssii', $today, $nowLocal, $isLate, $employeeId);
+                $executed = $stmt->execute();
+                if ($executed && $stmt->affected_rows > 0) {
+                    flash_success('Time-in recorded successfully.');
+                } elseif (!$executed) {
+                    error_log('Cashier attendance time-in failed: ' . $stmt->error);
+                    flash_error('Could not record time-in. Please try again.');
+                } else {
+                    flash_error('This employee has already clocked in today or is no longer active.');
+                }
+                $stmt->close();
             }
-            $stmt->close();
         }
     } elseif (isset($_POST['time_out'])) {
         $stmt = $conn->prepare("UPDATE attendance
@@ -75,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $employees = [];
 $rosterLoaded = false;
 $employeesStmt = $conn->prepare("SELECT e.id, e.employee_code, e.full_name, e.position,
-                                        a.time_in, a.time_out
+                                        a.time_in, a.time_out, a.is_late
                                  FROM employees e
                                  LEFT JOIN attendance a
                                    ON a.employee_id = e.id AND a.attendance_date = ?
@@ -100,7 +112,7 @@ if ($employeesStmt) {
 }
 
 $logs = [];
-$logsResult = $conn->query("SELECT e.full_name, e.position, a.attendance_date, a.time_in, a.time_out, a.total_hours
+$logsResult = $conn->query("SELECT e.full_name, e.position, a.attendance_date, a.time_in, a.time_out, a.total_hours, a.is_late
                             FROM attendance a
                             JOIN employees e ON e.id = a.employee_id
                             ORDER BY a.attendance_date DESC, e.full_name ASC
@@ -140,7 +152,7 @@ require_once __DIR__ . '/../includes/header.php';
         <div>
             <span class="cashier-attendance-eyebrow">TEAM TIMEKEEPING</span>
             <h1>Employee Attendance</h1>
-            <p>Find a team member and record their time in or time out in one step.</p>
+            <p>Find a team member and record their time in or time out in one step. Schedule <?php echo date('g:i A', strtotime($attendanceSettings['start_time'])); ?>–<?php echo date('g:i A', strtotime($attendanceSettings['end_time'])); ?>; time-in <?php echo $clockInOpensAt->format('g:i A'); ?>–<?php echo date('g:i A', strtotime($attendanceSettings['end_time'])); ?>. Late at or after <?php echo date('g:i A', strtotime($lateThreshold)); ?>.</p>
         </div>
         <div class="cashier-attendance-today">
             <span>Today</span>
@@ -207,7 +219,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <p class="cashier-attendance-position"><?php echo htmlspecialchars($employee['position'] ?: 'Employee', ENT_QUOTES, 'UTF-8'); ?></p>
                 <p class="cashier-attendance-code">ID: <?php echo htmlspecialchars($employee['employee_code'] ?: '—', ENT_QUOTES, 'UTF-8'); ?></p>
                 <div class="cashier-attendance-times">
-                    <span>In <strong><?php echo $hasClockedIn ? date('g:i A', strtotime($employee['time_in'])) : '—'; ?></strong></span>
+                    <span>In <strong><?php echo $hasClockedIn ? date('g:i A', strtotime($employee['time_in'])) : '—'; ?></strong><?php echo $hasClockedIn && app_attendance_record_is_late($employee['time_in'], $employee['is_late'], $attendanceSettings) ? ' · Late' : ''; ?></span>
                     <span>Out <strong><?php echo $hasClockedOut ? date('g:i A', strtotime($employee['time_out'])) : '—'; ?></strong></span>
                 </div>
                 <?php if ($status !== 'completed'): ?>
@@ -215,7 +227,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <?php csrf_field(); ?>
                         <input type="hidden" name="employee_id" value="<?php echo (int)$employee['id']; ?>">
                         <?php if ($status === 'not-started'): ?>
-                            <button type="submit" name="time_in" class="cashier-attendance-clock-in">Time in <?php echo htmlspecialchars($employee['full_name'], ENT_QUOTES, 'UTF-8'); ?></button>
+                            <button type="submit" name="time_in" class="cashier-attendance-clock-in" <?php echo $clockInAllowed ? '' : 'disabled'; ?>>Time in <?php echo htmlspecialchars($employee['full_name'], ENT_QUOTES, 'UTF-8'); ?></button>
                         <?php else: ?>
                             <button type="submit" name="time_out" class="cashier-attendance-clock-out">Time out <?php echo htmlspecialchars($employee['full_name'], ENT_QUOTES, 'UTF-8'); ?></button>
                         <?php endif; ?>
@@ -249,7 +261,7 @@ require_once __DIR__ . '/../includes/header.php';
         </div>
         <div class="user-table-wrapper">
             <table class="userTable">
-                <thead><tr><th>Employee</th><th>Position</th><th>Date</th><th>Time in</th><th>Time out</th><th>Total hours</th></tr></thead>
+                <thead><tr><th>Employee</th><th>Position</th><th>Date</th><th>Time in</th><th>Time out</th><th>Total hours</th><th>Late</th></tr></thead>
                 <tbody>
                 <?php if ($logs): foreach ($logs as $row): ?>
                     <tr>
@@ -259,9 +271,10 @@ require_once __DIR__ . '/../includes/header.php';
                         <td><?php echo $row['time_in'] ? date('g:i A', strtotime($row['time_in'])) : '—'; ?></td>
                         <td><?php echo $row['time_out'] ? date('g:i A', strtotime($row['time_out'])) : '—'; ?></td>
                         <td><?php echo number_format((float)$row['total_hours'], 2); ?></td>
+                        <td><?php echo app_attendance_record_is_late($row['time_in'], $row['is_late'], $attendanceSettings) ? 'Yes' : 'No'; ?></td>
                     </tr>
                 <?php endforeach; else: ?>
-                    <tr><td colspan="6">No attendance records found.</td></tr>
+                    <tr><td colspan="7">No attendance records found.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

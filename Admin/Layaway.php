@@ -456,7 +456,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <input type="number" id="layawayQty" name="quantity" min="1" step="1" inputmode="numeric" placeholder="Select a product first" required>
             </label>
             <label>Down payment (PHP)
-                <input type="number" id="layawayDownPayment" step="0.01" min="0" name="down_payment" placeholder="0.00" inputmode="decimal" required>
+                <input type="text" id="layawayDownPayment" step="0.01" min="0" name="down_payment" placeholder="0.00" inputmode="decimal" data-money-input pattern="[0-9,]+(\.[0-9]{1,2})?" required>
             </label>
             <label class="admin-layaway-notes">Notes <span class="admin-layaway-optional">Optional</span>
                 <input type="text" name="notes" maxlength="1000" placeholder="Add a short note about this account">
@@ -512,7 +512,7 @@ require_once __DIR__ . '/../includes/header.php';
                                     <?php csrf_field(); ?>
                                     <input type="hidden" name="layaway_id" value="<?php echo (int)$row['id']; ?>">
                                     <label class="sr-only" for="layaway-amount-<?php echo (int)$row['id']; ?>">Payment amount</label>
-                                    <input id="layaway-amount-<?php echo (int)$row['id']; ?>" type="number" name="amount" min="0.01" max="<?php echo htmlspecialchars(number_format((float)$row['balance_amount'], 2, '.', ''), ENT_QUOTES, 'UTF-8'); ?>" step="0.01" inputmode="decimal" placeholder="PHP amount" required>
+                                    <input id="layaway-amount-<?php echo (int)$row['id']; ?>" type="text" name="amount" min="0.01" max="<?php echo htmlspecialchars(number_format((float)$row['balance_amount'], 2, '.', ''), ENT_QUOTES, 'UTF-8'); ?>" step="0.01" inputmode="decimal" data-money-input pattern="[0-9,]+(\.[0-9]{1,2})?" placeholder="PHP amount" required>
                                     <label class="sr-only" for="layaway-notes-<?php echo (int)$row['id']; ?>">Payment note</label>
                                     <input id="layaway-notes-<?php echo (int)$row['id']; ?>" type="text" name="payment_notes" maxlength="255" placeholder="Payment note (optional)">
                                     <button type="submit" name="add_payment" value="1" class="admin-layaway-primary">Collect payment</button>

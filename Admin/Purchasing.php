@@ -600,7 +600,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <input type="number" name="item_qty[]" min="0.001" step="1" inputmode="decimal" placeholder="0">
                     </label>
                     <label>Unit cost (PHP)
-                        <input type="number" name="item_cost[]" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
+                        <input type="text" name="item_cost[]" min="0" step="0.01" inputmode="decimal" data-money-input pattern="[0-9,]+(\.[0-9]{1,2})?" placeholder="0.00">
                     </label>
                 </div>
             </template>
@@ -825,7 +825,7 @@ require_once __DIR__ . '/../includes/header.php';
         var total = 0;
         list.querySelectorAll('.po-line').forEach(function (row) {
             var q = parseFloat(row.querySelector('[name="item_qty[]"]').value) || 0;
-            var c = parseFloat(row.querySelector('[name="item_cost[]"]').value) || 0;
+            var c = parseMoney(row.querySelector('[name="item_cost[]"]').value);
             total += q * c;
         });
         totalEl.textContent = 'PHP ' + total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

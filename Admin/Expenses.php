@@ -185,7 +185,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <div class="admin-expense-form-row">
                     <label>
                         Amount (PHP)
-                        <input type="number" name="amount" min="0.01" step="0.01" placeholder="0.00" required>
+                        <input type="text" name="amount" min="0.01" step="0.01" inputmode="decimal" data-money-input pattern="[0-9,]+(\.[0-9]{1,2})?" placeholder="0.00" required>
                     </label>
                     <label>
                         Payment type <span class="admin-expense-optional">Optional</span>
