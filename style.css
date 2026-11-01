@@ -7559,6 +7559,7 @@ body.pos-body input.pos-line-total-input:focus {
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
 }
 .pos-dialog-end-shift { max-width: 650px; }
+.pos-dialog-pay { max-width: 480px; }
 .pos-dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .pos-dialog-kicker { display: block; margin-bottom: 4px; font-size: 12.5px; font-weight: 700; color: var(--p-accent); }
 .pos-dialog h2 { margin: 0; font-size: 21px; font-weight: 800; color: var(--p-ink); }
@@ -7592,6 +7593,26 @@ body.pos-body input.pos-line-total-input:focus {
 
 .pos-dialog input[type="number"]:focus,
 .pos-start-card input[type="number"]:focus { outline: 0; border-color: var(--p-brand); box-shadow: 0 0 0 4px rgba(27, 94, 58, 0.14); }
+
+.pos-dialog-pay .pos-money-input {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    height: 68px;
+    padding: 0 16px;
+    border: 1.5px solid var(--p-line-strong);
+    border-radius: 12px;
+    background: var(--p-surface);
+    color: var(--p-ink);
+    font-size: clamp(26px, 6vw, 34px);
+    font-weight: 700;
+    text-align: right;
+}
+.pos-dialog-pay .pos-money-input:focus {
+    outline: 0;
+    border-color: var(--p-brand);
+    box-shadow: 0 0 0 4px rgba(27, 94, 58, 0.14);
+}
 
 .pos-due {
     display: flex;
