@@ -195,8 +195,8 @@ require_once __DIR__ . '/../includes/header.php';
     <section class="dashboard-alerts">
         <div class="dashboard-section-heading">
             <div>
-                <h2>Needs attention</h2>
-                <p>Items that may need action soon.</p>
+                <h2>Inventory Alerts</h2>
+                <p>Low-stock and near-expiry items requiring follow-up.</p>
             </div>
             <span class="dashboard-alert-count"><?php echo count($lowStockProducts) + count($nearExpiryProducts); ?> alerts</span>
         </div>

@@ -1154,6 +1154,9 @@ function app_nav_structure($context, $role) {
                 ['label' => 'Shift Reports', 'href' => $b . 'Shift-Report.php'],
                 ['label' => 'Lay-Away Status', 'href' => $b . 'Layaway-Status.php'],
             ],
+            'Purchasing' => [
+                ['label' => 'Supplier Payments', 'href' => $b . 'Supplier-Payments.php'],
+            ],
         ];
     } elseif ($role === 'Cashier') {
         $b = $context === 'root' ? 'Cashier/' : '';
@@ -1162,6 +1165,7 @@ function app_nav_structure($context, $role) {
             'Sales' => [
                 ['label' => 'Receipts', 'href' => $b . 'Receipts.php'],
                 ['label' => 'Lay-Away', 'href' => $b . 'Layaway.php'],
+                ['label' => 'Supplier Payments', 'href' => $b . 'Supplier-Payments.php'],
             ],
             'Staff' => [
                 ['label' => 'My Shifts', 'href' => $b . 'Shift-Records.php'],

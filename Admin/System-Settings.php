@@ -99,88 +99,98 @@ require_once __DIR__ . '/../includes/header.php';
 ?>
 <?php render_page_heading('System Settings', 'Manage cashier permissions, employee timekeeping, and store-wide inventory behavior.'); ?>
 
-<main class="admin-settings-page">
+<main class="admin-settings-page admin-system-settings">
     <div class="admin-settings-overview" aria-label="System settings summary">
         <span><strong><?php echo count(array_filter($settingValues)); ?></strong> features enabled</span>
         <span><strong><?php echo count($settingValues) - count(array_filter($settingValues)); ?></strong> features paused</span>
         <span>Changes apply across the store</span>
     </div>
-    <section class="admin-settings-workspace">
-        <aside class="admin-settings-entry">
-            <div class="admin-settings-entry-heading">
-                <span class="admin-settings-mark" aria-hidden="true">⚙</span>
-                <div>
-                    <span class="admin-settings-kicker">STORE CONTROLS</span>
-                    <h2>POS &amp; attendance settings</h2>
-                    <p>Configure cashier access and the shared employee timekeeping rules.</p>
-                </div>
+    <section class="admin-system-settings-card" aria-labelledby="system-controls-title">
+        <div class="admin-system-settings-heading">
+            <span class="admin-settings-mark" aria-hidden="true">⚙</span>
+            <div>
+                <span class="admin-settings-kicker">STORE CONTROLS</span>
+                <h2 id="system-controls-title">POS &amp; attendance settings</h2>
+                <p>Configure cashier access and shared employee timekeeping rules.</p>
             </div>
-            <form method="post" class="admin-settings-form">
-                <?php csrf_field(); ?>
-                <h3>Attendance schedule</h3>
-                <p class="admin-settings-note">Applies to all employees and both attendance screens. Time-out is not restricted.</p>
-                <label>Scheduled start time
-                    <input type="time" name="attendance_start_time" value="<?php echo htmlspecialchars($attendanceSettings['start_time'], ENT_QUOTES, 'UTF-8'); ?>" required>
-                </label>
-                <label>Scheduled end time
-                    <input type="time" name="attendance_end_time" value="<?php echo htmlspecialchars($attendanceSettings['end_time'], ENT_QUOTES, 'UTF-8'); ?>" required>
-                </label>
-                <label>Late grace period (minutes)
-                    <input type="number" name="attendance_grace_minutes" min="0" max="240" step="1" value="<?php echo (int)$attendanceSettings['grace_minutes']; ?>" required>
-                    <small>Arrivals at or after the scheduled start plus this grace period are late.</small>
-                </label>
-                <label>Allow clock-in before start (minutes)
-                    <input type="number" name="attendance_early_clock_in_minutes" min="0" max="720" step="1" value="<?php echo (int)$attendanceSettings['early_clock_in_minutes']; ?>" required>
-                    <small>Clock-in is allowed from this many minutes before start through the scheduled end.</small>
-                </label>
-                <label>Late deduction per occurrence (PHP)
-                    <input type="number" name="attendance_late_deduction" min="0" max="100000" step="0.01" value="<?php echo number_format($attendanceSettings['late_deduction'], 2, '.', ''); ?>" required>
-                </label>
-                <h3>POS permissions</h3>
-                <div class="admin-settings-checks">
-                    <label>
-                        <input type="checkbox" name="cashier_can_apply_discounts" <?php echo $settingValues['discounts'] ? 'checked' : ''; ?>>
-                        <span><strong>Manual discounts</strong><small>Allow cashiers to apply discounts at checkout.</small></span>
-                    </label>
-                    <label>
-                        <input type="checkbox" name="cashier_can_manage_layaway_payments" <?php echo $settingValues['layaway'] ? 'checked' : ''; ?>>
-                        <span><strong>Lay-Away payments</strong><small>Allow cashiers to collect account payments.</small></span>
-                    </label>
-                    <label>
-                        <input type="checkbox" name="auto_stock_conversion_enabled" <?php echo $settingValues['conversion'] ? 'checked' : ''; ?>>
-                        <span><strong>Automatic unit conversion</strong><small>Enable configured bulk-to-retail stock conversion.</small></span>
-                    </label>
-                </div>
-                <p class="admin-settings-note">Automatic conversion also needs a rule configured for the product in <a href="Inventory.php">Inventory</a>.</p>
+        </div>
+        <form method="post" class="admin-settings-form admin-system-settings-form">
+            <?php csrf_field(); ?>
+            <div class="admin-system-settings-groups">
+                <section class="admin-system-settings-group" aria-labelledby="attendance-settings-title">
+                    <h3 id="attendance-settings-title">Attendance schedule</h3>
+                    <p class="admin-settings-note">Applies to all employees and both attendance screens. Time-out is not restricted.</p>
+                    <div class="admin-system-settings-fields">
+                        <label>Scheduled start time
+                            <input type="time" name="attendance_start_time" value="<?php echo htmlspecialchars($attendanceSettings['start_time'], ENT_QUOTES, 'UTF-8'); ?>" required>
+                        </label>
+                        <label>Scheduled end time
+                            <input type="time" name="attendance_end_time" value="<?php echo htmlspecialchars($attendanceSettings['end_time'], ENT_QUOTES, 'UTF-8'); ?>" required>
+                        </label>
+                        <label>Late grace period (minutes)
+                            <input type="number" name="attendance_grace_minutes" min="0" max="240" step="1" value="<?php echo (int)$attendanceSettings['grace_minutes']; ?>" required>
+                            <small>Arrivals at or after the scheduled start plus this grace period are late.</small>
+                        </label>
+                        <label>Allow clock-in before start (minutes)
+                            <input type="number" name="attendance_early_clock_in_minutes" min="0" max="720" step="1" value="<?php echo (int)$attendanceSettings['early_clock_in_minutes']; ?>" required>
+                            <small>Clock-in is allowed from this many minutes before start through the scheduled end.</small>
+                        </label>
+                        <label>Late deduction per occurrence (PHP)
+                            <input type="number" name="attendance_late_deduction" min="0" max="100000" step="0.01" value="<?php echo number_format($attendanceSettings['late_deduction'], 2, '.', ''); ?>" required>
+                        </label>
+                    </div>
+                </section>
+                <section class="admin-system-settings-group" aria-labelledby="pos-settings-title">
+                    <h3 id="pos-settings-title">POS permissions</h3>
+                    <p class="admin-settings-note">Choose which checkout and inventory actions cashiers can perform.</p>
+                    <div class="admin-settings-checks">
+                        <label>
+                            <input type="checkbox" name="cashier_can_apply_discounts" <?php echo $settingValues['discounts'] ? 'checked' : ''; ?>>
+                            <span><strong>Manual discounts</strong><small>Allow cashiers to apply discounts at checkout.</small></span>
+                        </label>
+                        <label>
+                            <input type="checkbox" name="cashier_can_manage_layaway_payments" <?php echo $settingValues['layaway'] ? 'checked' : ''; ?>>
+                            <span><strong>Lay-Away payments</strong><small>Allow cashiers to collect account payments.</small></span>
+                        </label>
+                        <label>
+                            <input type="checkbox" name="auto_stock_conversion_enabled" <?php echo $settingValues['conversion'] ? 'checked' : ''; ?>>
+                            <span><strong>Automatic unit conversion</strong><small>Enable configured bulk-to-retail stock conversion.</small></span>
+                        </label>
+                    </div>
+                    <p class="admin-settings-note">Automatic conversion also needs a rule configured for the product in <a href="Inventory.php">Inventory</a>.</p>
+                </section>
+            </div>
+            <div class="admin-system-settings-actions">
+                <span>Settings take effect across the store after saving.</span>
                 <button type="submit" name="save_settings">Save settings</button>
-            </form>
-        </aside>
-        <section class="admin-settings-register">
-            <div class="admin-settings-register-heading">
-                <div>
-                    <span class="admin-settings-kicker">MASTER DATA</span>
-                    <h2>Store directories</h2>
-                    <p>Keep purchasing and product classifications up to date.</p>
-                </div>
             </div>
-            <div class="admin-settings-shortcuts">
-                <a href="Suppliers.php">
-                    <span class="admin-settings-shortcut-icon" aria-hidden="true">↗</span>
-                    <span><strong>Suppliers</strong><small>Manage supplier names and availability.</small></span>
-                    <span class="admin-settings-arrow" aria-hidden="true">→</span>
-                </a>
-                <a href="Categories.php">
-                    <span class="admin-settings-shortcut-icon" aria-hidden="true">⌑</span>
-                    <span><strong>Categories</strong><small>Organize product catalog categories.</small></span>
-                    <span class="admin-settings-arrow" aria-hidden="true">→</span>
-                </a>
-                <a href="Users.php">
-                    <span class="admin-settings-shortcut-icon" aria-hidden="true">◎</span>
-                    <span><strong>User accounts</strong><small>Manage sign-in access and roles.</small></span>
-                    <span class="admin-settings-arrow" aria-hidden="true">→</span>
-                </a>
+        </form>
+    </section>
+    <section class="admin-system-settings-directories" aria-labelledby="store-directories-title">
+        <div class="admin-system-settings-heading">
+            <div>
+                <span class="admin-settings-kicker">MASTER DATA</span>
+                <h2 id="store-directories-title">Store directories</h2>
+                <p>Manage the reference information used across purchasing and inventory.</p>
             </div>
-        </section>
+        </div>
+        <div class="admin-settings-shortcuts">
+            <a href="Suppliers.php">
+                <span class="admin-settings-shortcut-icon" aria-hidden="true">↗</span>
+                <span><strong>Suppliers</strong><small>Manage supplier names and availability.</small></span>
+                <span class="admin-settings-arrow" aria-hidden="true">→</span>
+            </a>
+            <a href="Categories.php">
+                <span class="admin-settings-shortcut-icon" aria-hidden="true">⌑</span>
+                <span><strong>Categories</strong><small>Organize product catalog categories.</small></span>
+                <span class="admin-settings-arrow" aria-hidden="true">→</span>
+            </a>
+            <a href="Users.php">
+                <span class="admin-settings-shortcut-icon" aria-hidden="true">◎</span>
+                <span><strong>User accounts</strong><small>Manage sign-in access and roles.</small></span>
+                <span class="admin-settings-arrow" aria-hidden="true">→</span>
+            </a>
+        </div>
     </section>
 </main>
 

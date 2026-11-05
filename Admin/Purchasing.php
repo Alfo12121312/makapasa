@@ -12,6 +12,7 @@ require_once __DIR__ . '/../includes/app.php';
 require_roles(['System Admin', 'Manager'], '../Login.php');
 
 $conn = app_connect();
+require_once __DIR__ . '/../includes/purchasing_payments.php';
 
 /** User-fixable problem (shown as-is). Anything else is logged and shown generically. */
 class PurchasingInputException extends RuntimeException {}
@@ -114,6 +115,13 @@ function po_ensure_schema(mysqli $conn) {
     }
 }
 po_ensure_schema($conn);
+try {
+    po_payment_ensure_schema($conn);
+} catch (Throwable $e) {
+    error_log('[Purchasing] payment schema setup failed: ' . $e->getMessage());
+    http_response_code(500);
+    exit('Supplier payment tracking could not be prepared. Please contact an administrator.');
+}
 
 function po_number($id) {
     return 'PO-' . str_pad((string)(int)$id, 4, '0', STR_PAD_LEFT);
@@ -166,14 +174,15 @@ function po_receive(mysqli $conn, $poId, $userId, array $receivedQuantities, arr
                                 SET received_quantity = received_quantity + ?, expiration_date = ?, batch_reference = ?
                                 WHERE id = ?");
         $receipt = $conn->prepare("INSERT INTO purchase_order_receipts
-            (po_id, item_id, product_id, quantity, unit_cost, expiration_date, batch_reference, received_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            (po_id, item_id, product_id, quantity, unit_cost, expiration_date, batch_reference, received_by, delivery_reference)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
         if (!$lock || !$move || !$stock || !$mark || !$receipt) {
             throw new RuntimeException('Could not prepare receipt stock updates.');
         }
 
         $received = 0;
         $remainingTotal = 0.0;
+        $deliveryReference = bin2hex(random_bytes(16));
         foreach ($items as $item) {
             $itemId = (int)$item['id'];
             $qtyRaw = $receivedQuantities[$itemId] ?? '';
@@ -233,7 +242,7 @@ function po_receive(mysqli $conn, $poId, $userId, array $receivedQuantities, arr
             if (!$stock->execute()) throw new RuntimeException('Could not update inventory stock.');
             $mark->bind_param('dssi', $qty, $expiration, $batch, $itemId);
             if (!$mark->execute()) throw new RuntimeException('Could not update received order quantity.');
-            $receipt->bind_param('iiiddssi', $poId, $itemId, $productId, $qty, $cost, $expiration, $batch, $userId);
+            $receipt->bind_param('iiiddssis', $poId, $itemId, $productId, $qty, $cost, $expiration, $batch, $userId, $deliveryReference);
             if (!$receipt->execute()) throw new RuntimeException('Could not save receipt history.');
             $received++;
             $remainingTotal = round($remainingTotal - $qty, 3);
@@ -271,6 +280,7 @@ if ($supplierResult) {
     while ($s = $supplierResult->fetch_assoc()) {
         $supplierNames[] = $s['supplier_name'];
     }
+    $cashierUsers = po_active_cashiers($conn);
 }
 
 $productsById = [];
@@ -290,15 +300,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (isset($_POST['add_po'])) {
         $supplier = trim((string)($_POST['supplier'] ?? ''));
+        $payerTypeRaw = $_POST['payer_type'] ?? '';
+        $payerType = is_scalar($payerTypeRaw) ? (string)$payerTypeRaw : '';
+        $payerCashierId = filter_var($_POST['payer_cashier_id'] ?? null, FILTER_VALIDATE_INT);
         $productIds = $_POST['item_product'] ?? [];
         $problem = null;
         $lines = [];
 
-        if (!in_array($supplier, $supplierNames, true)) {
+        if ($payerType === 'owner') {
+            $payerCashierId = null;
+        } elseif ($payerType !== 'cashier' || $payerCashierId === false
+            || !in_array((int)$payerCashierId, array_map(static function ($cashier) {
+                return (int)$cashier['id'];
+            }, $cashierUsers), true)) {
+            $problem = 'Choose an active cashier or the owner to pay for this order.';
+        }
+        if ($problem === null && !in_array($supplier, $supplierNames, true)) {
             $problem = 'Choose a supplier from the list.';
-        } elseif (!is_array($productIds)) {
+        } elseif ($problem === null && !is_array($productIds)) {
             $problem = 'Add at least one product to the order.';
-        } else {
+        }
+        if ($problem === null && is_array($productIds)) {
             foreach ($productIds as $i => $rawId) {
                 $pid = (int)$rawId;
                 $qtyRaw = trim((string)($_POST['item_qty'][$i] ?? ''));
@@ -346,9 +368,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 foreach ($lines as $l) { $totalCost += $l['qty'] * $l['cost']; }
                 $avgCost = $totalQty > 0 ? round($totalCost / $totalQty, 2) : 0.0;
 
-                $stmt = $conn->prepare("INSERT INTO purchase_orders (supplier, item_name, quantity, unit_cost) VALUES (?, ?, ?, ?)");
-                $stmt->bind_param('ssdd', $supplier, $summary, $totalQty, $avgCost);
-                $stmt->execute();
+                $stmt = $conn->prepare("INSERT INTO purchase_orders
+                                        (supplier, item_name, quantity, unit_cost, payer_type, payer_cashier_id)
+                                        VALUES (?, ?, ?, ?, ?, ?)");
+                if (!$stmt) throw new RuntimeException('Could not prepare purchase order insert.');
+                $stmt->bind_param('ssddsi', $supplier, $summary, $totalQty, $avgCost, $payerType, $payerCashierId);
+                if (!$stmt->execute()) throw new RuntimeException('Could not save purchase order.');
                 $poId = (int)$conn->insert_id;
                 $stmt->close();
 
@@ -435,7 +460,8 @@ $view = (($_GET['view'] ?? '') === 'history') ? 'history' : 'active';
 
 $orders = [];
 $ordersResult = $conn->query(
-    "SELECT po.*, COALESCE(t.total_cost, 0) AS total_cost, COALESCE(t.remaining_cost, 0) AS remaining_cost,
+    "SELECT po.*, payer.username AS payer_cashier_name,
+            COALESCE(t.total_cost, 0) AS total_cost, COALESCE(t.remaining_cost, 0) AS remaining_cost,
             COALESCE(t.line_count, 0) AS line_count, u.username AS received_by_name
      FROM purchase_orders po
      LEFT JOIN (SELECT po_id, SUM(quantity * unit_cost) AS total_cost,
@@ -443,6 +469,7 @@ $ordersResult = $conn->query(
                        COUNT(*) AS line_count
                 FROM purchase_order_items GROUP BY po_id) t ON t.po_id = po.id
      LEFT JOIN users u ON u.id = po.received_by
+     LEFT JOIN users payer ON payer.id = po.payer_cashier_id
      ORDER BY po.created_at DESC, po.id DESC
      LIMIT 1000"
 );
@@ -455,6 +482,7 @@ if ($ordersResult) {
 
 $itemsByPo = [];
 $receiptsByItem = [];
+$paymentsByDelivery = [];
 if ($orders) {
     $ids = implode(',', array_map(static function ($o) { return (int)$o['id']; }, $orders));
     $itemsResult = $conn->query("SELECT * FROM purchase_order_items WHERE po_id IN ({$ids}) ORDER BY id");
@@ -463,11 +491,21 @@ if ($orders) {
             $itemsByPo[(int)$it['po_id']][] = $it;
         }
     }
-    $receiptResult = $conn->query("SELECT item_id, quantity, expiration_date, batch_reference, received_at
+    $receiptResult = $conn->query("SELECT item_id, quantity, unit_cost, expiration_date, batch_reference, received_at, delivery_reference
                                    FROM purchase_order_receipts WHERE po_id IN ({$ids}) ORDER BY received_at, id");
     if ($receiptResult) {
         while ($receiptRow = $receiptResult->fetch_assoc()) {
             $receiptsByItem[(int)$receiptRow['item_id']][] = $receiptRow;
+        }
+        $paymentResult = $conn->query("SELECT p.delivery_reference, p.amount, p.paid_at, p.payment_source,
+                                              p.paid_by_type, u.username AS paid_by_name
+                                       FROM purchase_order_payments p
+                                       LEFT JOIN users u ON u.id = p.paid_by
+                                       WHERE p.po_id IN ({$ids})");
+        if ($paymentResult) {
+            while ($paymentRow = $paymentResult->fetch_assoc()) {
+                $paymentsByDelivery[$paymentRow['delivery_reference']] = $paymentRow;
+            }
         }
     }
 }
@@ -501,6 +539,7 @@ $extra_head = '<style>
 .po-tabs a.is-active{background:#24573a;border-color:#24573a;color:#fff}
 .po-tabs small{margin-left:5px;opacity:.75}
 .po-lines{display:grid;gap:10px}
+.po-payer-label{display:block;margin-top:3px;color:#78867b;font-size:9px;font-weight:600}
 .po-line{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:11px;border:1px solid #dfe7dc;border-radius:8px;background:#fff}
 .po-line .po-line-product{grid-column:1/-1}
 .po-line label{display:grid;gap:4px;font-size:9px;font-weight:750;color:#6a7d6e}
@@ -517,7 +556,12 @@ $extra_head = '<style>
 .po-outcome{font-size:10.5px;color:#617367;line-height:1.5}
 .po-outcome em{color:#a0443d;font-style:normal;font-weight:650}
 .po-status-form{flex-wrap:wrap}
-.po-status-form .po-reason{flex:1 1 100%;min-height:31px;padding:4px 7px;border:1px solid #e3c9c5;border-radius:5px;font:inherit;font-size:10px}
+.admin-po-status-form.po-status-form{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:5px;min-width:0}
+.po-reason-wrap{display:grid;grid-column:1/-1;gap:4px;padding:6px;border:1px solid #efd4ce;border-radius:6px;background:#fff8f6;color:#713d35;font-size:9px;font-weight:750}
+.po-reason-wrap[hidden]{display:none}
+.po-status-form .po-reason{box-sizing:border-box;width:100%;min-width:0;min-height:36px;padding:5px 7px;border:1px solid #dcbab3;border-radius:5px;background:#fff;color:#35483a;font:inherit;font-size:10px;line-height:1.35;resize:vertical}
+.po-status-form .po-reason:focus{border-color:#b56b5d;outline:0;box-shadow:0 0 0 3px rgba(181,107,93,.12)}
+.po-reason-hint{color:#846d68;font-size:10px;font-weight:400;line-height:1.4}
 .admin-po-status.is-failed{background:#fbe9e7;color:#a0443d}
 .admin-po-status.is-partially-received{background:#fff4df;color:#8a5a16}
 .po-receive-details{min-width:190px;margin-top:7px}
@@ -574,6 +618,27 @@ require_once __DIR__ . '/../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </label>
+                <label>
+                    Who will pay for received deliveries?
+                    <select name="payer_type" id="poPayerType" required>
+                        <option value="">Select who pays</option>
+                        <option value="owner">Owner (personal funds)</option>
+                        <?php if ($cashierUsers): ?>
+                            <option value="cashier">Assign an active cashier</option>
+                        <?php endif; ?>
+                    </select>
+                </label>
+                <?php if ($cashierUsers): ?>
+                <label id="poCashierAssignment" hidden>
+                    Assigned cashier
+                    <select name="payer_cashier_id" id="poPayerCashier" disabled>
+                        <option value="">Select a cashier</option>
+                        <?php foreach ($cashierUsers as $cashier): ?>
+                            <option value="<?php echo (int)$cashier['id']; ?>"><?php echo $h($cashier['username']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <?php endif; ?>
 
                 <div class="po-lines" id="poLines"></div>
                 <button type="button" class="po-add-line" id="poAddLine">+ Add another product <span style="font-weight:400">(optional)</span></button>
@@ -656,9 +721,14 @@ require_once __DIR__ . '/../includes/header.php';
                         $statusClass = strtolower(str_replace(' ', '-', (string)$row['status']));
                     ?>
                         <tr data-status="<?php echo $h($row['status']); ?>" data-search="<?php echo $h($search); ?>">
-                            <td><strong class="admin-po-supplier"><?php echo $h(po_number($poId)); ?></strong></td>
-                            <td><?php echo $h($row['supplier']); ?></td>
-                            <td>
+                            <td data-label="Order">
+                                <strong class="admin-po-supplier"><?php echo $h(po_number($poId)); ?></strong>
+                                <small class="po-payer-label">Payment assigned to: <?php echo $row['payer_type'] === 'cashier'
+                                    ? $h($row['payer_cashier_name'] ?: 'Assigned cashier')
+                                    : 'Owner (personal funds)'; ?></small>
+                            </td>
+                            <td data-label="Supplier"><?php echo $h($row['supplier']); ?></td>
+                            <td data-label="Products">
                                 <details class="po-items">
                                     <summary><?php echo count($items); ?> product<?php echo count($items) === 1 ? '' : 's'; ?> · <?php echo $h(mb_strimwidth($items ? $items[0]['product_name'] : $row['item_name'], 0, 28, '…')); ?></summary>
                                     <ul>
@@ -681,6 +751,17 @@ require_once __DIR__ . '/../includes/header.php';
                                                         <?php echo fmt_qty($receiptRow['quantity']); ?>
                                                         <?php if (!empty($receiptRow['expiration_date'])): ?> · exp <?php echo $h(date('M j, Y', strtotime($receiptRow['expiration_date']))); ?><?php endif; ?>
                                                         · <code><?php echo $h($receiptRow['batch_reference']); ?></code>
+                                                        <?php if (!empty($receiptRow['delivery_reference'])):
+                                                            $deliveryPayment = $paymentsByDelivery[$receiptRow['delivery_reference']] ?? null; ?>
+                                                            · <?php if ($deliveryPayment): ?>
+                                                                Paid PHP <?php echo number_format((float)$deliveryPayment['amount'], 2); ?>
+                                                                by <?php echo $h($deliveryPayment['paid_by_name'] ?: ucfirst($deliveryPayment['paid_by_type'])); ?>
+                                                                via <?php echo $h($deliveryPayment['payment_source']); ?>
+                                                                (<?php echo $h(date('M j, Y', strtotime($deliveryPayment['paid_at']))); ?>)
+                                                            <?php else: ?>
+                                                                Payment due
+                                                            <?php endif; ?>
+                                                        <?php endif; ?>
                                                     </li>
                                                 <?php endforeach; ?>
                                                 </ul>
@@ -692,10 +773,10 @@ require_once __DIR__ . '/../includes/header.php';
                                     </ul>
                                 </details>
                             </td>
-                            <td class="admin-po-total">₱<?php echo number_format((float)$row['total_cost'], 2); ?></td>
-                            <td><?php echo $h(date('M j, Y', strtotime($row['created_at']))); ?></td>
-                            <td><span class="admin-po-status is-<?php echo $h($statusClass); ?>"><?php echo $h($row['status']); ?></span></td>
-                            <td>
+                            <td class="admin-po-total" data-label="Total cost">₱<?php echo number_format((float)$row['total_cost'], 2); ?></td>
+                            <td data-label="Created"><?php echo $h(date('M j, Y', strtotime($row['created_at']))); ?></td>
+                            <td data-label="Status"><span class="admin-po-status is-<?php echo $h($statusClass); ?>"><?php echo $h($row['status']); ?></span></td>
+                            <td data-label="<?php echo $view === 'active' ? 'Update status' : 'Outcome'; ?>">
                             <?php if ($view === 'active'):
                                 $next = $row['status'] === 'Pending' ? ['Ordered', 'Failed'] : ($row['status'] === 'Ordered' ? ['Failed'] : []); ?>
                                 <?php if ($next): ?>
@@ -708,7 +789,11 @@ require_once __DIR__ . '/../includes/header.php';
                                         <?php endforeach; ?>
                                     </select>
                                     <button type="submit" name="set_status" value="1">Save</button>
-                                    <input type="text" name="reason" class="po-reason" maxlength="255" placeholder="Reason for failure" hidden>
+                                    <label class="po-reason-wrap" hidden>
+                                        Reason for failure
+                                        <textarea name="reason" class="po-reason" minlength="3" maxlength="255" rows="1" placeholder="Why did this order fail?" aria-describedby="po-reason-hint-<?php echo $poId; ?>"></textarea>
+                                        <small class="po-reason-hint" id="po-reason-hint-<?php echo $poId; ?>">Required · 3–255 characters</small>
+                                    </label>
                                 </form>
                                 <?php endif; ?>
                                 <details class="po-receive-details">
@@ -790,12 +875,17 @@ require_once __DIR__ . '/../includes/header.php';
     document.querySelectorAll('.po-status-form').forEach(function (form) {
         var sel = form.querySelector('select[name="status"]');
         var reason = form.querySelector('.po-reason');
-        sel.addEventListener('change', function () {
+        var reasonWrap = form.querySelector('.po-reason-wrap');
+        var updateReasonField = function () {
             var failed = sel.value === 'Failed';
-            reason.hidden = !failed;
+            reasonWrap.hidden = !failed;
             reason.required = failed;
             if (failed) reason.focus();
+        };
+        sel.addEventListener('change', function () {
+            updateReasonField();
         });
+        updateReasonField();
         form.addEventListener('submit', function (e) {
             if (sel.value === 'Failed' &&
                 !window.confirm('Mark this order as failed? It will move to History and can no longer be received.')) {
@@ -810,6 +900,20 @@ require_once __DIR__ . '/../includes/header.php';
             }
         });
     });
+
+    var payerType = document.getElementById('poPayerType');
+    var cashierAssignment = document.getElementById('poCashierAssignment');
+    var payerCashier = document.getElementById('poPayerCashier');
+    if (payerType && cashierAssignment && payerCashier) {
+        var updatePayerAssignment = function () {
+            var cashierSelected = payerType.value === 'cashier';
+            cashierAssignment.hidden = !cashierSelected;
+            payerCashier.disabled = !cashierSelected;
+            payerCashier.required = cashierSelected;
+        };
+        payerType.addEventListener('change', updatePayerAssignment);
+        updatePayerAssignment();
+    }
 
     // ----- create form: dynamic product lines -----
     var list = document.getElementById('poLines');
