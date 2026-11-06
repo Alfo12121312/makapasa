@@ -11,7 +11,7 @@ require_roles(['Admin'], '../Login.php');
 
 $conn = app_connect();
 gate_ensure_table($conn);
-$idleMinutes = gate_idle_minutes();
+$idleMinutes = gate_idle_minutes($conn);
 $inactMinutes = gate_inactivity_minutes();
 $maxDevices = gate_max_devices();
 $myToken = (string)($_SESSION['gate_token'] ?? '');

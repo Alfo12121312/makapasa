@@ -43,7 +43,7 @@ function usr_device($ua) {
 
 /** Who is signed in right now: [user_id => ['sessions' => n, 'idle_s' => secs, 'device' => text]]. */
 function usr_presence_map($conn) {
-    $idle = gate_idle_minutes();
+    $idle = gate_idle_minutes($conn);
     $inact = gate_inactivity_minutes();
     $map = [];
     $res = $conn->query("SELECT user_id, user_agent, TIMESTAMPDIFF(SECOND, last_activity, NOW()) AS idle_s

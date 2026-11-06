@@ -22,25 +22,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
     $graceRaw = $_POST['attendance_grace_minutes'] ?? '';
     $earlyClockInRaw = $_POST['attendance_early_clock_in_minutes'] ?? '';
     $lateDeduction = $_POST['attendance_late_deduction'] ?? '';
+    $idleSessionRaw = $_POST['session_idle_minutes'] ?? '';
+    $inactivityLogoutRaw = $_POST['inactivity_logout_minutes'] ?? '';
     $timePattern = '/^(?:[01]\d|2[0-3]):[0-5]\d$/D';
     $graceMinutes = is_scalar($graceRaw) ? filter_var((string)$graceRaw, FILTER_VALIDATE_INT) : false;
     $earlyClockInMinutes = is_scalar($earlyClockInRaw) ? filter_var((string)$earlyClockInRaw, FILTER_VALIDATE_INT) : false;
+    $idleSessionMinutes = is_scalar($idleSessionRaw) ? filter_var((string)$idleSessionRaw, FILTER_VALIDATE_INT) : false;
+    $inactivityLogoutMinutes = is_scalar($inactivityLogoutRaw) ? filter_var((string)$inactivityLogoutRaw, FILTER_VALIDATE_INT) : false;
     $validLateDeduction = is_string($lateDeduction) && preg_match('/^\d{1,6}(?:\.\d{1,2})?$/D', $lateDeduction);
 
-    $invalidTimekeeping = !is_string($startTime) || !preg_match($timePattern, $startTime)
+    $invalidSettings = !is_string($startTime) || !preg_match($timePattern, $startTime)
         || !is_string($endTime) || !preg_match($timePattern, $endTime)
         || $startTime >= $endTime
         || $graceMinutes === false || $graceMinutes < 0 || $graceMinutes > 240
         || $earlyClockInMinutes === false || $earlyClockInMinutes < 0 || $earlyClockInMinutes > 720
+        || $idleSessionMinutes === false || $idleSessionMinutes < 1 || $idleSessionMinutes > 120
+        || $inactivityLogoutMinutes === false || $inactivityLogoutMinutes < 1 || $inactivityLogoutMinutes > 1440
         || !$validLateDeduction || (float)$lateDeduction > 100000;
-    if (!$invalidTimekeeping) {
+    if (!$invalidSettings) {
         $startMinutes = (int)substr($startTime, 0, 2) * 60 + (int)substr($startTime, 3, 2);
         $endMinutes = (int)substr($endTime, 0, 2) * 60 + (int)substr($endTime, 3, 2);
-        $invalidTimekeeping = $startMinutes + $graceMinutes > $endMinutes;
+        $invalidSettings = $startMinutes + $graceMinutes > $endMinutes;
     }
 
-    if ($invalidTimekeeping) {
-        flash_error('Check the attendance schedule, grace period, clock-in window, and late deduction values.');
+    if ($invalidSettings) {
+        flash_error('Check the attendance values, stale session cleanup (1–120 minutes), and inactivity logout (1–1,440 minutes).');
         header('Location: System-Settings.php');
         exit();
     }
@@ -54,6 +60,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
         'attendance_grace_minutes' => (string)$graceMinutes,
         'attendance_early_clock_in_minutes' => (string)$earlyClockInMinutes,
         'attendance_late_deduction' => number_format((float)$lateDeduction, 2, '.', ''),
+        'session_idle_minutes' => (string)$idleSessionMinutes,
+        'inactivity_logout_minutes' => (string)$inactivityLogoutMinutes,
     ];
 
     $conn->begin_transaction();
@@ -90,6 +98,8 @@ $settingValues = [
     'conversion' => auto_stock_conversion_enabled($conn),
 ];
 $attendanceSettings = app_attendance_settings($conn);
+$idleSessionMinutes = gate_idle_minutes($conn);
+$inactivityLogoutMinutes = gate_inactivity_minutes($conn);
 
 // Rendering
 $page_title = 'System Settings';
@@ -111,7 +121,7 @@ require_once __DIR__ . '/../includes/header.php';
             <div>
                 <span class="admin-settings-kicker">STORE CONTROLS</span>
                 <h2 id="system-controls-title">POS &amp; attendance settings</h2>
-                <p>Configure cashier access and shared employee timekeeping rules.</p>
+                <p>Configure cashier access, employee timekeeping, and session behavior.</p>
             </div>
         </div>
         <form method="post" class="admin-settings-form admin-system-settings-form">
@@ -158,6 +168,20 @@ require_once __DIR__ . '/../includes/header.php';
                         </label>
                     </div>
                     <p class="admin-settings-note">Automatic conversion also needs a rule configured for the product in <a href="Inventory.php">Inventory</a>.</p>
+                </section>
+                <section class="admin-system-settings-group" aria-labelledby="session-settings-title">
+                    <h3 id="session-settings-title">Session behavior</h3>
+                    <p class="admin-settings-note">These are two different timers: stale session cleanup is for browsers that stop checking in; inactivity logout is for users who leave the app untouched.</p>
+                    <div class="admin-system-settings-fields">
+                        <label>Stale session cleanup (minutes)
+                            <input type="number" name="session_idle_minutes" min="1" max="120" step="1" value="<?php echo (int)$idleSessionMinutes; ?>" required>
+                            <small>If a browser closes, crashes, or loses connection, this is how long the session can remain before the system frees its slot. Choose 1 to 120 minutes.</small>
+                        </label>
+                        <label>Inactivity logout (minutes)
+                            <input type="number" name="inactivity_logout_minutes" min="1" max="1440" step="1" value="<?php echo (int)$inactivityLogoutMinutes; ?>" required>
+                            <small>Signs users out after this long without activity in the app. Choose 1 to 1,440 minutes. Cashier POS is exempt.</small>
+                        </label>
+                    </div>
                 </section>
             </div>
             <div class="admin-system-settings-actions">

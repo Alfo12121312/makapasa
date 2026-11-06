@@ -93,9 +93,63 @@ function gate_setting($key, $default) {
  */
 function gate_limits_enabled() { return (bool)gate_setting('enforce_access_limits', false); }
 function gate_max_devices() { return max(1, gate_setting('max_active_devices', 3)); }
-function gate_idle_minutes() { return max(1, gate_setting('session_idle_minutes', 10)); }
+function gate_minutes_setting($key, $default, $min, $max, $db = null) {
+    static $minutesByKey = [];
+    if (isset($minutesByKey[$key])) {
+        return $minutesByKey[$key];
+    }
+
+    $minutes = min($max, max($min, gate_setting($key, $default)));
+    $ownsConnection = $db === null;
+    if ($ownsConnection) {
+        $db = gate_connect();
+    }
+    if (!$db) {
+        return $minutes;
+    }
+
+    try {
+        $stmt = $db->prepare('SELECT setting_value FROM system_settings WHERE setting_key = ? LIMIT 1');
+        if (!$stmt) {
+            error_log('[gate] could not prepare minute setting lookup: ' . $db->error);
+            $minutesByKey[$key] = $minutes;
+            return $minutes;
+        }
+        $stmt->bind_param('s', $key);
+        if (!$stmt->execute()) {
+            error_log('[gate] could not load minute setting: ' . $stmt->error);
+            $stmt->close();
+            $minutesByKey[$key] = $minutes;
+            return $minutes;
+        }
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if ($row) {
+            $storedMinutes = filter_var($row['setting_value'], FILTER_VALIDATE_INT);
+            if ($storedMinutes !== false && $storedMinutes >= $min && $storedMinutes <= $max) {
+                $minutes = $storedMinutes;
+            } else {
+                error_log('[gate] invalid minute setting; using configured default');
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('[gate] minute setting lookup failed: ' . $e->getMessage());
+    } finally {
+        if ($ownsConnection) {
+            $db->close();
+        }
+    }
+
+    $minutesByKey[$key] = $minutes;
+    return $minutes;
+}
+function gate_idle_minutes($db = null) {
+    return gate_minutes_setting('session_idle_minutes', 10, 1, 120, $db);
+}
 /** Minutes without real user activity (mouse, keyboard, touch, or a request) before auto sign-out. */
-function gate_inactivity_minutes() { return max(1, gate_setting('inactivity_logout_minutes', 30)); }
+function gate_inactivity_minutes($db = null) {
+    return gate_minutes_setting('inactivity_logout_minutes', 30, 1, 1440, $db);
+}
 
 /** Light DB connection (does not run the schema bootstrap that app_connect() does). */
 function gate_connect() {
@@ -182,7 +236,7 @@ function gate_login($userId, $role) {
     $locked = false;
     try {
         gate_ensure_table($db);
-        $idle = gate_idle_minutes();
+        $idle = gate_idle_minutes($db);
         $max = gate_max_devices();
         $device = gate_device_id();
 
@@ -256,7 +310,7 @@ function gate_validate() {
         if (!$c || $c->num_rows === 0) {
             gate_ensure_table($db);
         }
-        $idle = gate_idle_minutes();
+        $idle = gate_idle_minutes($db);
         $inact = gate_inactivity_minutes();
         $stmt = $db->prepare("SELECT id, user_id,
                                      (last_seen < (NOW() - INTERVAL 30 SECOND)) AS stale,

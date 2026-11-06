@@ -116,6 +116,8 @@ Optional access limits (off by default):
 'seed_demo_users' => true,
 ```
 
+Admins can adjust **Stale session cleanup** (1–120 minutes) and **Inactivity logout** (1–1,440 minutes) in System Settings. Saved values override `session_idle_minutes` and `inactivity_logout_minutes` in `includes/config.php`; config values remain the fallback when no setting has been saved. Stale cleanup applies when a browser stops checking in; inactivity logout signs out users after they leave the app untouched. Cashier POS is exempt from inactivity logout.
+
 Turn `seed_demo_users` off (and change default passwords) if this copy will run in a shop.
 
 ---
